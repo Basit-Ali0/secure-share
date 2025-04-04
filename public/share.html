@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Download File - SecureShare</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="download-card">
+            <h1>Download File</h1>
+            <div id="status-area">
+                <p id="status-message">Checking file information...</p>
+                <p id="file-name">File: <span id="original-name">Loading...</span></p>
+                <div id="error-message" class="error-message" style="display: none;"></div>
+            </div>
+            <div id="download-section" style="display: none;">
+                <button id="download-button">Download & Decrypt</button>
+                <div class="progress-bar" id="decrypt-progress" style="display: none;">
+                    <div class="progress-bar-fill"></div>
+                    <div class="progress-bar-text">0%</div>
+                </div>
+            </div>
+        </div>
+         <p><a href="/">Upload another file</a></p>
+    </div>
+
+    <script>
+        const statusMessage = document.getElementById('status-message');
+        const originalNameSpan = document.getElementById('original-name');
+        const downloadSection = document.getElementById('download-section');
+        const downloadButton = document.getElementById('download-button');
+        const decryptProgressBar = document.getElementById('decrypt-progress');
+        const decryptProgressBarFill = decryptProgressBar.querySelector('.progress-bar-fill');
+        const decryptProgressBarText = decryptProgressBar.querySelector('.progress-bar-text');
+        const errorMessage = document.getElementById('error-message');
+
+        let fileId, keyHex, ivHex, authTagHex, originalName;
+
+        // --- Helper Functions ---
+        function hexToBuffer(hex) {
+            const buffer = new Uint8Array(hex.length / 2);
+            for (let i = 0; i < hex.length; i += 2) {
+                buffer[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+            }
+            return buffer;
+        }
+
+        function showError(message) {
+            statusMessage.textContent = 'Error';
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+            downloadSection.style.display = 'none';
+            console.error("Share Page Error:", message);
+        }
+
+        function updateProgress(percentage) {
+            decryptProgressBarFill.style.width = `${percentage}%`;
+            decryptProgressBarText.textContent = `${percentage}%`;
+        }
+
+        // --- Main Logic ---
+        async function initializeSharePage() {
+            // 1. Extract info from URL fragment (#)
+            const fragment = window.location.hash.substring(1);
+            const params = new URLSearchParams(fragment);
+
+            keyHex = params.get('key');
+            ivHex = params.get('iv');
+            authTagHex = params.get('authTag');
+            fileId = window.location.pathname.split('/').pop(); // Get fileId from path
+
+            if (!fileId || !keyHex || !ivHex || !authTagHex) {
+                showError('Invalid or incomplete share link.');
+                return;
+            }
+
+            // 2. Fetch original filename
+            try {
+                const response = await fetch(`/api/fileinfo/${fileId}`);
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        showError('File not found. It might have expired or been deleted.');
+                    } else {
+                        throw new Error(`Failed to fetch file info: ${response.statusText}`);
+                    }
+                    return;
+                }
+                const fileInfo = await response.json();
+                originalName = fileInfo.originalName;
+                originalNameSpan.textContent = originalName;
+                statusMessage.textContent = 'File ready for download.';
+                downloadSection.style.display = 'block';
+            } catch (error) {
+                showError(`Could not retrieve file details: ${error.message}`);
+            }
+        }
+
+        // 3. Handle Download Button Click
+        downloadButton.addEventListener('click', async () => {
+            downloadButton.disabled = true;
+            downloadButton.textContent = 'Downloading...';
+            errorMessage.style.display = 'none';
+            decryptProgressBar.style.display = 'none'; // Hide progress initially
+
+            try {
+                // Fetch the encrypted file
+                const response = await fetch(`/download/${fileId}`);
+                if (!response.ok) {
+                     if (response.status === 404) {
+                         showError('File not found. It seems to have expired or been deleted since the page loaded.');
+                     } else {
+                         throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+                     }
+                     // Re-enable button on expected errors
+                     downloadButton.disabled = false;
+                     downloadButton.textContent = 'Download & Decrypt';
+                    return;
+                }
+
+                const encryptedData = await response.arrayBuffer();
+                statusMessage.textContent = 'Decrypting file...';
+                downloadButton.textContent = 'Decrypting...';
+                decryptProgressBar.style.display = 'block';
+                updateProgress(0);
+
+                 // Decrypt (ensure this is inside the click handler or accessible)
+                 const keyBuffer = hexToBuffer(keyHex);
+                 const ivBuffer = hexToBuffer(ivHex);
+                 const authTagBuffer = hexToBuffer(authTagHex);
+
+                 // Combine encrypted data and auth tag for AES-GCM decryption
+                 // Auth tag is typically appended, but SubtleCrypto API expects it separately.
+                 // The encryptedData *should* contain only the ciphertext.
+
+                 console.log("Key length:", keyBuffer.byteLength);
+                 console.log("IV length:", ivBuffer.byteLength);
+                 console.log("Auth Tag length:", authTagBuffer.byteLength);
+                 console.log("Ciphertext length:", encryptedData.byteLength);
+
+                 // Import the key
+                 const cryptoKey = await window.crypto.subtle.importKey(
+                     "raw",
+                     keyBuffer,
+                     { name: "AES-GCM" },
+                     false, // Not extractable
+                     ["decrypt"]
+                 );
+                 console.log("Key imported");
+
+                 // Prepare decryption parameters
+                 const decryptParams = {
+                     name: "AES-GCM",
+                     iv: ivBuffer,
+                     // additionalData: undefined, // Optional additional authenticated data
+                     tagLength: 128 // GCM auth tag length in bits (16 bytes * 8)
+                 };
+
+                 // Add the authentication tag to the end of the ciphertext for decryption call
+                 // NOTE: SubtleCrypto API for AES-GCM is tricky. Some implementations expect
+                 // the tag appended to the ciphertext, others use the tagLength parameter.
+                 // Let's try providing the tag implicitly via ArrayBuffer concatenation first.
+                 // UPDATE: The standard API expects the tag to be implicitly part of the ciphertext buffer.
+                 // We need to combine the received encryptedData (ciphertext) and the authTag.
+
+                const combinedBuffer = new Uint8Array(encryptedData.byteLength + authTagBuffer.byteLength);
+                combinedBuffer.set(new Uint8Array(encryptedData), 0);
+                combinedBuffer.set(authTagBuffer, encryptedData.byteLength);
+
+                console.log("Combined buffer length:", combinedBuffer.byteLength);
+
+
+                 // Decrypt!
+                 // TODO: Add progress for decryption if possible (usually too fast for large files)
+                 // For now, just show "Decrypting..."
+                let decryptedData;
+                try {
+                     decryptedData = await window.crypto.subtle.decrypt(
+                         decryptParams,
+                         cryptoKey,
+                         combinedBuffer // Use the buffer containing ciphertext + auth tag
+                     );
+                    console.log("Decryption successful");
+                    updateProgress(100);
+                 } catch(decryptionError) {
+                    console.error("Decryption Error:", decryptionError);
+                    showError(`Decryption failed. The key, IV, or data might be corrupt, or the file has been tampered with. Error: ${decryptionError.message}`);
+                    downloadButton.disabled = false;
+                    downloadButton.textContent = 'Download & Decrypt';
+                    decryptProgressBar.style.display = 'none';
+                    return;
+                 }
+
+
+                // Create a Blob and trigger download
+                const blob = new Blob([decryptedData], { type: 'application/octet-stream' });
+                const downloadUrl = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = originalName || 'downloaded_file'; // Use fetched original name
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(downloadUrl);
+
+                statusMessage.textContent = 'File decrypted and download started!';
+                downloadButton.textContent = 'Download Complete';
+                // Keep button disabled after successful download
+                // Or re-enable after a short delay:
+                // setTimeout(() => {
+                //    downloadButton.disabled = false;
+                //    downloadButton.textContent = 'Download & Decrypt';
+                // }, 3000);
+
+
+            } catch (error) {
+                showError(`An error occurred during download/decryption: ${error.message}`);
+                 downloadButton.disabled = false;
+                 downloadButton.textContent = 'Download & Decrypt';
+                 decryptProgressBar.style.display = 'none';
+            }
+        });
+
+        // --- Initialize ---
+        document.addEventListener('DOMContentLoaded', initializeSharePage);
+    </script>
+</body>
+</html>

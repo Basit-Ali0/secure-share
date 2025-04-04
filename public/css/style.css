@@ -1,0 +1,374 @@
+/* public/css/style.css */
+:root {
+    --primary-color: #007bff;
+    --secondary-color: #6c757d;
+    --background-color: #f8f9fa;
+    --text-color: #333;
+    --border-color: #dee2e6;
+    --success-color: #28a745;
+    --error-color: #dc3545;
+    --font-family: 'Roboto', sans-serif;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: var(--font-family);
+    background-color: var(--background-color);
+    color: var(--text-color);
+    line-height: 1.6;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+}
+
+.container {
+    background-color: #fff;
+    padding: 30px 40px;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    max-width: 600px;
+    width: 100%;
+    text-align: center;
+}
+
+header h1 {
+    color: var(--primary-color);
+    margin-bottom: 10px;
+    font-weight: 700;
+}
+
+header p {
+    color: var(--secondary-color);
+    margin-bottom: 30px;
+    font-size: 1.1em;
+}
+
+main {
+    margin-bottom: 30px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+    text-align: left;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 400;
+    color: var(--secondary-color);
+}
+
+.file-drop-area {
+    border: 2px dashed var(--border-color);
+    border-radius: 5px;
+    padding: 30px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.3s ease, background-color 0.3s ease;
+}
+
+.file-drop-area.dragover {
+    border-color: var(--primary-color);
+    background-color: #eef6ff;
+}
+
+.file-drop-area input[type="file"] {
+    display: none; /* Hide default input */
+}
+
+.file-drop-area p {
+    color: var(--secondary-color);
+    font-size: 1em;
+}
+
+.file-drop-area label {
+    color: var(--primary-color);
+    text-decoration: underline;
+    cursor: pointer;
+    display: inline; /* Make label inline for the sentence */
+}
+
+#file-name-display {
+    margin-top: 10px;
+    font-style: italic;
+    color: var(--text-color);
+    display: block; /* Ensure it takes its own line */
+    word-break: break-all;
+}
+
+
+select {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    font-size: 1em;
+    background-color: #fff;
+    appearance: none; /* Remove default arrow */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%236c757d' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 16px 16px;
+}
+
+button[type="submit"] {
+    background-color: var(--primary-color);
+    color: white;
+    padding: 12px 25px;
+    border: none;
+    border-radius: 5px;
+    font-size: 1.1em;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    width: 100%;
+    font-weight: 700;
+}
+
+button[type="submit"]:hover {
+    background-color: #0056b3;
+}
+
+button[type="submit"]:disabled {
+    background-color: var(--secondary-color);
+    cursor: not-allowed;
+}
+
+
+.progress-bar {
+    width: 100%;
+    background-color: var(--border-color);
+    border-radius: 5px;
+    overflow: hidden;
+    margin-top: 20px;
+    height: 25px; /* Explicit height */
+    position: relative; /* For positioning text */
+}
+
+.progress-bar-fill {
+    height: 100%;
+    width: 0;
+    background-color: var(--success-color);
+    transition: width 0.3s ease-out;
+}
+
+.progress-bar-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #fff;
+    font-weight: bold;
+    text-shadow: 1px 1px 1px rgba(0,0,0,0.3);
+}
+
+
+#result-area {
+    margin-top: 30px;
+    background-color: #eef6ff;
+    padding: 20px;
+    border-radius: 5px;
+    border: 1px solid #b8d7ff;
+    text-align: left;
+}
+
+#result-area h2 {
+    color: var(--primary-color);
+    margin-bottom: 15px;
+    font-size: 1.3em;
+}
+
+.share-link-container {
+    display: flex;
+    margin-bottom: 15px;
+}
+
+#share-link {
+    flex-grow: 1;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px 0 0 5px;
+    font-size: 0.95em;
+    background-color: #fff;
+    overflow-x: auto; /* Handle long links */
+}
+
+#copy-button {
+    padding: 10px 15px;
+    background-color: var(--secondary-color);
+    color: white;
+    border: none;
+    border-radius: 0 5px 5px 0;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    font-size: 0.95em;
+}
+
+#copy-button:hover {
+    background-color: #5a6268;
+}
+
+.warning {
+    font-size: 0.9em;
+    color: var(--secondary-color);
+    font-style: italic;
+}
+
+.error {
+    color: var(--error-color);
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    padding: 15px;
+    border-radius: 5px;
+    margin-top: 20px;
+    text-align: left;
+}
+
+footer {
+    margin-top: 40px;
+    color: var(--secondary-color);
+    font-size: 0.9em;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .container {
+        padding: 20px;
+    }
+    header h1 {
+        font-size: 1.8em;
+    }
+    header p {
+        font-size: 1em;
+    }
+}
+
+/* --- Download Page Specific Styles --- */
+
+.download-card {
+    background-color: #fff; /* Match container or slightly different */
+    padding: 30px 40px;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+    margin-top: 20px; /* Add some space if needed */
+    text-align: left;
+}
+
+.download-card h1 {
+    text-align: center;
+    margin-bottom: 25px;
+    color: var(--primary-color);
+}
+
+#status-area {
+    margin-bottom: 25px;
+    padding: 15px;
+    background-color: #f8f9fa; /* Light background for status */
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+}
+
+#status-message {
+    font-size: 1.1em;
+    font-weight: 500;
+    margin-bottom: 8px;
+    color: var(--secondary-color);
+}
+
+#file-name {
+    font-size: 1em;
+    color: var(--text-color);
+    word-break: break-all; /* Ensure long names wrap */
+}
+
+#original-name {
+    font-weight: bold;
+}
+
+#download-section {
+    margin-top: 20px;
+    text-align: center; /* Center the button */
+}
+
+#download-button {
+    background-color: var(--success-color); /* Green for download */
+    color: white;
+    padding: 12px 30px;
+    border: none;
+    border-radius: 5px;
+    font-size: 1.1em;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.1s ease;
+    display: inline-block; /* Allow centering */
+    width: auto; /* Override potential 100% width */
+    font-weight: 700;
+}
+
+#download-button:hover {
+    background-color: #218838;
+}
+
+#download-button:active {
+    transform: scale(0.98);
+}
+
+#download-button:disabled {
+    background-color: var(--secondary-color);
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+/* Using .error-message class for consistency */
+.error-message {
+    color: var(--error-color);
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    padding: 15px;
+    border-radius: 5px;
+    margin-top: 20px;
+    text-align: left;
+    font-weight: 500;
+}
+
+#decrypt-progress {
+    /* Reuse existing .progress-bar styles */
+    margin-top: 15px;
+}
+
+/* Spinner (moved from inline style) */
+.spinner {
+    border: 4px solid rgba(0, 0, 0, 0.1);
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border-left-color: var(--primary-color);
+    animation: spin 1s ease infinite;
+    margin: 20px auto;
+    display: none; /* Initially hidden - controlled by JS */
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Link back to upload */
+.container > p > a {
+ display: inline-block;
+ margin-top: 30px;
+ color: var(--secondary-color);
+ text-decoration: none;
+ font-size: 0.9em;
+}
+
+.container > p > a:hover {
+ color: var(--primary-color);
+ text-decoration: underline;
+}

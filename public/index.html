@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureShare - Temporary File Sharing</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>SecureShare</h1>
+            <p>Upload a file, get a temporary encrypted link.</p>
+        </header>
+
+        <main>
+            <form id="upload-form" enctype="multipart/form-data">
+                <div class="form-group file-drop-area">
+                    <input type="file" id="file-input" name="file" required>
+                    <p>Drag & drop your file here or <label for="file-input">click to select</label>.</p>
+                    <span id="file-name-display"></span>
+                </div>
+
+                <div class="form-group">
+                    <label for="timer-select">Self-destruct after:</label>
+                    <select id="timer-select" name="destroyTimer" required>
+                        <option value="3600">1 Hour</option> <option value="21600">6 Hours</option>
+                        <option value="86400" selected>24 Hours</option>
+                        <option value="604800">7 Days</option>
+                    </select>
+                </div>
+
+                <button type="submit" id="upload-button">Upload & Encrypt</button>
+            </form>
+
+            <div id="upload-progress" class="progress-bar" style="display: none;">
+                <div class="progress-bar-fill"></div>
+                <span class="progress-bar-text">0%</span>
+            </div>
+
+            <div id="result-area" style="display: none;">
+                <h2>File Uploaded!</h2>
+                <p>Share this secure link:</p>
+                <div class="share-link-container">
+                     <input type="text" id="share-link" readonly>
+                     <button id="copy-button">Copy</button>
+                </div>
+                <p class="warning">This link will expire and the file will be permanently deleted based on your timer selection. The decryption key is part of the link after the '#'. Do not share the key separately.</p>
+            </div>
+
+            <div id="error-message" class="error" style="display: none;"></div>
+        </main>
+
+        <footer>
+            <p>&copy; 2025 Your Name/Project Group. BTech CSE Minor Project.</p>
+        </footer>
+    </div>
+
+    <script src="js/script.js"></script>
+</body>
+</html> 

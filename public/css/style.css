@@ -104,7 +104,9 @@ main {
     word-break: break-all;
 }
 
-
+/* Common Input Styles */
+input[type="text"],
+input[type="password"],
 select {
     width: 100%;
     padding: 12px;
@@ -112,6 +114,27 @@ select {
     border-radius: 5px;
     font-size: 1em;
     background-color: #fff;
+    color: var(--text-color);
+    transition: border-color 0.3s ease;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+/* Apply placeholder styles */
+input[type="text"]::placeholder,
+input[type="password"]::placeholder {
+    color: #aaa;
+    opacity: 1; /* Firefox */
+}
+
+/* Specific style for select to keep dropdown arrow */
+select {
     appearance: none; /* Remove default arrow */
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%236c757d' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
@@ -141,7 +164,6 @@ button[type="submit"]:disabled {
     cursor: not-allowed;
 }
 
-
 .progress-bar {
     width: 100%;
     background-color: var(--border-color);
@@ -168,7 +190,6 @@ button[type="submit"]:disabled {
     font-weight: bold;
     text-shadow: 1px 1px 1px rgba(0,0,0,0.3);
 }
-
 
 #result-area {
     margin-top: 30px;
@@ -371,4 +392,71 @@ footer {
 .container > p > a:hover {
  color: var(--primary-color);
  text-decoration: underline;
+}
+
+/* Style for the password prompt section */
+#password-section {
+    margin-top: 25px;
+    padding: 20px;
+    background-color: #fff9e6; /* Light yellow background */
+    border: 1px solid #ffeeba;
+    border-radius: 5px;
+    text-align: left;
+}
+
+#password-section p strong {
+    color: #856404; /* Darker yellow/brown text */
+    display: block;
+    margin-bottom: 15px;
+    font-size: 1.1em;
+}
+
+/* Adjust form group inside password section */
+#password-section .form-group {
+    display: flex; /* Align input and button */
+    align-items: center;
+    margin-bottom: 10px; /* Reduce bottom margin */
+}
+
+#password-section label {
+    display: none; /* Visually hide label, but keep for accessibility */
+}
+
+#password-section input[type="password"] {
+    flex-grow: 1;
+    margin-right: 10px;
+    /* Inherits common input styles */
+}
+
+/* Style Unlock button like Download button */
+#password-submit-button {
+    background-color: var(--primary-color); /* Blue like upload */
+    color: white;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 5px;
+    font-size: 1em; /* Slightly smaller than download? Match input padding */
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.1s ease;
+    font-weight: 700;
+    flex-shrink: 0; /* Prevent shrinking */
+}
+
+#password-submit-button:hover {
+    background-color: #0056b3;
+}
+
+#password-submit-button:active {
+    transform: scale(0.98);
+}
+
+#password-submit-button:disabled {
+    background-color: var(--secondary-color);
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+#password-error-message {
+     /* Inherits .error-message styles */
+     margin-top: 10px; /* Add some space above */
 }

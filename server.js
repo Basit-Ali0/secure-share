@@ -5,6 +5,7 @@ const path = require('path');
 const crypto = require('crypto'); // For generating IDs
 const schedule = require('node-schedule');
 const fs = require('fs'); // File System module
+const bcrypt = require('bcrypt'); // Added
 
 const app = express();
 const port = process.env.PORT || 3000; // Use environment variable or default
@@ -74,6 +75,9 @@ app.post('/upload', tempUpload.single('file'), async (req, res) => {
     const tempPath = req.file.path;
     const originalName = req.file.originalname;
     const timerSeconds = parseInt(req.body.destroyTimer, 10) || 86400; // Default 24 hours
+    const password = req.body.password; // Added: Get password from form data
+    let fileId = null; // Define fileId earlier for potential error cleanup
+    let passwordHash = null; // Added: Initialize passwordHash
 
     try {
         // Generate secure random key and IV (Initialization Vector)
@@ -81,7 +85,7 @@ app.post('/upload', tempUpload.single('file'), async (req, res) => {
         const iv = crypto.randomBytes(16); // 128 bits for GCM
 
         // Generate a unique file ID
-        const fileId = crypto.randomBytes(16).toString('hex');
+        fileId = crypto.randomBytes(16).toString('hex'); // Assign here
         const encryptedFilename = `${fileId}.enc`;
         const encryptedFilePath = path.join(uploadDir, encryptedFilename);
 
@@ -93,6 +97,13 @@ app.post('/upload', tempUpload.single('file'), async (req, res) => {
         console.log(`Encrypting ${originalName} to ${encryptedFilePath}`);
         const encryptionResult = await encryptFile(renamedTempPath, key, iv);
         console.log(`Encryption complete for ${fileId}`);
+
+        // Hash password if provided
+        if (password) { // Added check
+            const saltRounds = 10; // Standard practice for bcrypt
+            passwordHash = await bcrypt.hash(password, saltRounds); // Hash the password
+            console.log(`Password hash generated for ${fileId}`);
+        } // End added check
 
         // Clean up the unencrypted temporary file
         fs.unlink(renamedTempPath, (err) => {
@@ -115,35 +126,34 @@ app.post('/upload', tempUpload.single('file'), async (req, res) => {
             });
         });
 
-        // Store file metadata (including key and IV - needed for decryption link)
+        // Store file metadata (including password hash)
         fileStore[fileId] = {
             filePath: encryptedFilePath,
             originalName: originalName,
             job: job,
             key: key.toString('hex'), // Store keys as hex strings
             iv: iv.toString('hex'),
-            authTag: encryptionResult.authTag.toString('hex') // Store auth tag as hex
+            authTag: encryptionResult.authTag.toString('hex'), // Store auth tag as hex
+            passwordHash: passwordHash // Added: Store the hash (will be null if no password)
         };
 
-        // Generate the share link (key, iv, authTag in fragment identifier #)
-        // IMPORTANT: Fragment (#) is NOT sent to the server, keeping keys client-side for download
-        const shareLink = `${req.protocol}://${req.get('host')}/share/${fileId}#key=${fileStore[fileId].key}&iv=${fileStore[fileId].iv}&authTag=${fileStore[fileId].authTag}`;
+        // Generate the share link (NO KEYS in fragment)
+        const shareLink = `${req.protocol}://${req.get('host')}/share/${fileId}`; // Modified: Removed keys from URL fragment
 
         res.json({ shareLink: shareLink });
 
     } catch (error) {
         console.error('Upload/Encryption Error:', error);
         // Clean up temp file on error
-        fs.unlink(tempPath, (err) => {
-             if (err && err.code !== 'ENOENT') console.error(`Error deleting temp file ${tempPath} after error:`, err);
+        // Use fs.rm for more modern cleanup, allowing recursive and force options if needed later
+        // Use renamedTempPath for consistency if rename occurred before error
+        const pathToDelete = fs.existsSync(path.join(tempUploadDir, fileId || ''))
+                             ? path.join(tempUploadDir, fileId)
+                             : tempPath; // Use original temp path if rename didn't happen
+
+        fs.unlink(pathToDelete, (err) => {
+             if (err && err.code !== 'ENOENT') console.error(`Error deleting temp file ${pathToDelete} after error:`, err);
          });
-         // Also clean renamed temp file if it exists
-         const renamedTempPathOnError = path.join(tempUploadDir, fileId || '');
-         if (fileId && fs.existsSync(renamedTempPathOnError)) {
-             fs.unlink(renamedTempPathOnError, (err) => {
-                 if (err) console.error(`Error deleting renamed temp file ${renamedTempPathOnError} after error:`, err);
-             });
-         }
 
         res.status(500).json({ message: 'Failed to process file.' });
     }
@@ -219,10 +229,65 @@ app.get('/api/fileinfo/:fileId', (req, res) => {
         return res.status(404).json({ message: 'File info not found or expired.' });
     }
 
-    // Only send non-sensitive info
-    res.json({ originalName: fileData.originalName });
+    // Check if password protected
+    if (fileData.passwordHash) {
+        // Password protected: only send original name and indicator
+        res.json({ originalName: fileData.originalName, requiresPassword: true });
+    } else {
+        // Not password protected: send name and decryption keys
+        res.json({
+            originalName: fileData.originalName,
+            requiresPassword: false,
+            key: fileData.key,
+            iv: fileData.iv,
+            authTag: fileData.authTag
+        });
+    }
 });
 
+// --- Route to verify password and get keys ---
+app.post('/api/verify-password/:fileId', async (req, res) => {
+    const fileId = req.params.fileId;
+    const { password } = req.body; // Get password from request body
+    const fileData = fileStore[fileId];
+
+    if (!fileData) {
+        return res.status(404).json({ message: 'File not found or expired.' });
+    }
+
+    // Check if file is actually password protected
+    if (!fileData.passwordHash) {
+        console.warn(`Attempted password verification for non-protected file: ${fileId}`);
+        // Should not happen with correct client logic, but handle defensively
+        return res.status(400).json({ message: 'File is not password protected.' });
+    }
+
+    if (!password) {
+        return res.status(400).json({ message: 'Password required.' });
+    }
+
+    try {
+        // Compare provided password with stored hash
+        const match = await bcrypt.compare(password, fileData.passwordHash);
+
+        if (match) {
+            // Password correct: return decryption keys
+            res.json({
+                key: fileData.key,
+                iv: fileData.iv,
+                authTag: fileData.authTag
+            });
+        } else {
+            // Password incorrect
+            console.log(`Incorrect password attempt for file: ${fileId}`);
+            // Consider adding rate limiting here in a real application
+            res.status(401).json({ message: 'Incorrect password.' });
+        }
+    } catch (error) {
+        console.error(`Error during password verification for ${fileId}:`, error);
+        res.status(500).json({ message: 'Error verifying password.' });
+    }
+});
 
 // --- Cleanup logic (optional but good) ---
 function cleanupExpiredFiles() {

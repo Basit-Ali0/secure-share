@@ -3,6 +3,7 @@ const uploadForm = document.getElementById('upload-form');
 const fileInput = document.getElementById('file-input');
 const fileNameDisplay = document.getElementById('file-name-display');
 const timerSelect = document.getElementById('timer-select');
+const passwordInput = document.getElementById('password-input');
 const uploadButton = document.getElementById('upload-button');
 const progressBar = document.getElementById('upload-progress');
 const progressBarFill = progressBar.querySelector('.progress-bar-fill');
@@ -52,6 +53,7 @@ uploadForm.addEventListener('submit', async (e) => {
 
     const file = fileInput.files[0];
     const timer = timerSelect.value;
+    const password = passwordInput.value;
 
     if (!file) {
         showError('Please select a file to upload.');
@@ -70,6 +72,9 @@ uploadForm.addEventListener('submit', async (e) => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('destroyTimer', timer);
+    if (password) {
+        formData.append('password', password);
+    }
 
     try {
         // Use XMLHttpRequest for progress tracking
@@ -98,6 +103,7 @@ uploadForm.addEventListener('submit', async (e) => {
                 resultArea.style.display = 'block';
                 // Reset file input and display
                 fileInput.value = '';
+                passwordInput.value = '';
                 fileNameDisplay.textContent = '';
             } else {
                 // Error

@@ -7,7 +7,7 @@ import './App.css'
 function App() {
     return (
         <BrowserRouter>
-            <div className="min-h-screen gradient-bg">
+            <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
                 <Header />
                 <Routes>
                     <Route path="/" element={<HomePage />} />

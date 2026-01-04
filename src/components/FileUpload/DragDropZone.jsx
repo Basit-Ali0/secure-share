@@ -76,8 +76,8 @@ export default function DragDropZone({ onFileSelect }) {
             relative border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer
             transition-all duration-300 glass-card
             ${isDragging
-                            ? 'border-primary-400 bg-primary-500/20 scale-105'
-                            : 'border-white/30 hover:border-primary-400 hover:bg-white/20'
+                            ? 'border-primary-500 bg-primary-500/10 scale-105'
+                            : 'border-gray-300 dark:border-gray-600 hover:border-primary-500 hover:bg-gray-100/50 dark:hover:bg-gray-800/50'
                         }
           `}
                 >
@@ -95,20 +95,20 @@ export default function DragDropZone({ onFileSelect }) {
               ${isDragging ? 'scale-110' : ''}
             `}>
                             {isDragging ? (
-                                <File className="w-12 h-12 text-primary-400" />
+                                <File className="w-12 h-12 text-primary-600 dark:text-primary-400" />
                             ) : (
-                                <Upload className="w-12 h-12 text-white" />
+                                <Upload className="w-12 h-12 text-primary-600 dark:text-primary-400" />
                             )}
                         </div>
 
                         <div>
-                            <h3 className="text-2xl font-bold text-white mb-2">
+                            <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
                                 {isDragging ? 'Drop your file here' : 'Upload a file'}
                             </h3>
-                            <p className="text-white/70">
+                            <p className="text-gray-600 dark:text-gray-400">
                                 Drag and drop or click to browse
                             </p>
-                            <p className="text-white/50 text-sm mt-2">
+                            <p className="text-gray-500 dark:text-gray-500 text-sm mt-2">
                                 Maximum file size: 5GB
                             </p>
                         </div>

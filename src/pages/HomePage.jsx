@@ -13,12 +13,12 @@ export default function HomePage() {
         <div className="container mx-auto px-6 py-12">
             {/* Hero Section */}
             <div className="text-center mb-12">
-                <h1 className="text-5xl md:text-6xl font-bold text-white mb-4">
+                <h1 className="text-5xl md:text-6xl font-bold text-gray-900 dark:text-white mb-4">
                     Share Files Securely
                     <br />
-                    <span className="text-primary-400">Zero-Knowledge Encryption</span>
+                    <span className="bg-gradient-to-r from-primary-600 to-purple-600 bg-clip-text text-transparent">Zero-Knowledge Encryption</span>
                 </h1>
-                <p className="text-xl text-white/80 max-w-2xl mx-auto">
+                <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
                     Upload files up to 5GB with end-to-end encryption. Your files, your keys, your privacy.
                 </p>
             </div>
@@ -57,12 +57,12 @@ export default function HomePage() {
 
 function FeatureCard({ icon, title, description }) {
     return (
-        <div className="glass-card p-6 rounded-xl hover:bg-white/20 transition-all duration-300 group">
-            <div className="text-primary-400 mb-3 group-hover:scale-110 transition-transform">
+        <div className="glass-card p-6 rounded-xl glass-hover group">
+            <div className="text-primary-600 dark:text-primary-400 mb-3 group-hover:scale-110 transition-transform">
                 {icon}
             </div>
-            <h3 className="text-white font-semibold text-lg mb-2">{title}</h3>
-            <p className="text-white/70 text-sm">{description}</p>
+            <h3 className="text-gray-900 dark:text-white font-semibold text-lg mb-2">{title}</h3>
+            <p className="text-gray-600 dark:text-gray-400 text-sm">{description}</p>
         </div>
     )
 }

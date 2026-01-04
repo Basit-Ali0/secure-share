@@ -4,6 +4,7 @@ import { Download, Lock, AlertCircle, Loader } from 'lucide-react'
 import { getFileMetadata, downloadEncryptedFile, incrementDownloadCount } from '../utils/supabase'
 import { decryptFile } from '../utils/encryption'
 import { formatFileSize, getFileIcon } from '../utils/fileUtils'
+import QRCode from '../components/SharePage/QRCode'
 
 export default function SharePage() {
     const { fileId } = useParams()
@@ -14,6 +15,7 @@ export default function SharePage() {
     const [error, setError] = useState(null)
     const [downloading, setDownloading] = useState(false)
     const [downloadProgress, setDownloadProgress] = useState(0)
+    const [showQR, setShowQR] = useState(false)
 
     useEffect(() => {
         loadFileMetadata()
@@ -72,6 +74,8 @@ export default function SharePage() {
             setTimeout(() => {
                 setDownloading(false)
                 setDownloadProgress(0)
+                // Reload metadata to show updated download count
+                loadFileMetadata()
             }, 1000)
 
         } catch (err) {
@@ -118,13 +122,14 @@ export default function SharePage() {
     const FileIcon = getFileIcon(metadata.file_type)
     const fileSize = formatFileSize(metadata.file_size)
     const createdDate = new Date(metadata.created_at).toLocaleDateString()
-    const expiresDate = new Date(metadata.expires_at).toLocaleDateString()
+    const expiresDate = new Date(metadata.expires_at).toLocaleString()
+    const shareUrl = window.location.href
 
     return (
         <div className="container mx-auto px-6 py-12">
-            <div className="max-w-2xl mx-auto">
+            <div className="max-w-2xl mx-auto space-y-6">
+                {/* File Info Card */}
                 <div className="glass-card p-8 rounded-2xl">
-                    {/* File Info */}
                     <div className="flex items-start gap-6 mb-8">
                         <div className="p-6 rounded-xl bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800">
                             <FileIcon className="w-16 h-16 text-primary-600 dark:text-primary-400" />
@@ -187,6 +192,32 @@ export default function SharePage() {
                                     style={{ width: `${downloadProgress}%` }}
                                 />
                             </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* QR Code Card */}
+                <div className="glass-card p-8 rounded-2xl">
+                    <button
+                        onClick={() => setShowQR(!showQR)}
+                        className="w-full flex items-center justify-between text-left"
+                    >
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                            Share via QR Code
+                        </h3>
+                        <svg
+                            className={`w-6 h-6 text-gray-600 dark:text-gray-400 transition-transform ${showQR ? 'rotate-180' : ''}`}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </button>
+
+                    {showQR && (
+                        <div className="mt-6 flex justify-center">
+                            <QRCode url={shareUrl} />
                         </div>
                     )}
                 </div>

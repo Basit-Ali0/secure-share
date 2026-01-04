@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import DragDropZone from '../components/FileUpload/DragDropZone'
 import UploadProgress from '../components/FileUpload/UploadProgress'
-import { Shield, Lock, Zap, Globe, Check, Copy } from 'lucide-react'
+import ExpirySelector, { EXPIRY_OPTIONS } from '../components/FileUpload/ExpirySelector'
+import FilePreviewModal from '../components/FileUpload/FilePreviewModal'
+import QRCode from '../components/SharePage/QRCode'
+import { Shield, Lock, Zap, Globe, Check, Copy, Eye, QrCode as QrCodeIcon } from 'lucide-react'
 import { encryptFile } from '../utils/encryption'
 import { uploadEncryptedFile, saveFileMetadata } from '../utils/supabase'
-import { useNavigate } from 'react-router-dom'
 
 export default function HomePage() {
     const [selectedFile, setSelectedFile] = useState(null)
@@ -13,7 +15,9 @@ export default function HomePage() {
     const [uploadStatus, setUploadStatus] = useState('')
     const [shareUrl, setShareUrl] = useState(null)
     const [copied, setCopied] = useState(false)
-    const navigate = useNavigate()
+    const [showPreview, setShowPreview] = useState(false)
+    const [showQR, setShowQR] = useState(false)
+    const [selectedExpiry, setSelectedExpiry] = useState(EXPIRY_OPTIONS[2]) // Default 24 hours
 
     const handleFileSelect = (file) => {
         setSelectedFile(file)
@@ -41,12 +45,16 @@ export default function HomePage() {
 
             const { path } = await uploadEncryptedFile(encrypted.encryptedBlob, fileId)
 
-            // Step 3: Save metadata (NO KEYS!)
+            // Step 3: Save metadata with custom expiry
             setUploadStatus('Saving metadata...')
             setUploadProgress(80)
 
             const expiresAt = new Date()
-            expiresAt.setHours(expiresAt.getHours() + 24) // 24 hour expiry
+            if (selectedExpiry.unit === 'hours') {
+                expiresAt.setHours(expiresAt.getHours() + selectedExpiry.value)
+            } else {
+                expiresAt.setDate(expiresAt.getDate() + selectedExpiry.value)
+            }
 
             await saveFileMetadata({
                 fileId,
@@ -101,16 +109,34 @@ export default function HomePage() {
                 {!uploading && !shareUrl && (
                     <>
                         <DragDropZone onFileSelect={handleFileSelect} />
+
                         {selectedFile && (
-                            <div className="mt-6 flex justify-center">
-                                <button
-                                    onClick={handleUpload}
-                                    className="btn-primary flex items-center gap-2"
-                                >
-                                    <Shield className="w-5 h-5" />
-                                    Encrypt & Upload
-                                </button>
-                            </div>
+                            <>
+                                <div className="mt-6">
+                                    <ExpirySelector
+                                        selected={selectedExpiry}
+                                        onChange={setSelectedExpiry}
+                                    />
+                                </div>
+
+                                <div className="mt-6 flex gap-3 justify-center">
+                                    <button
+                                        onClick={() => setShowPreview(true)}
+                                        className="px-6 py-3 rounded-lg font-medium bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors flex items-center gap-2"
+                                    >
+                                        <Eye className="w-5 h-5" />
+                                        Preview File
+                                    </button>
+
+                                    <button
+                                        onClick={handleUpload}
+                                        className="btn-primary flex items-center gap-2"
+                                    >
+                                        <Shield className="w-5 h-5" />
+                                        Encrypt & Upload
+                                    </button>
+                                </div>
+                            </>
                         )}
                     </>
                 )}
@@ -140,7 +166,7 @@ export default function HomePage() {
                             {shareUrl}
                         </div>
 
-                        <div className="flex gap-3 justify-center">
+                        <div className="flex gap-3 justify-center mb-6">
                             <button
                                 onClick={handleCopy}
                                 className="btn-primary flex items-center gap-2"
@@ -148,16 +174,32 @@ export default function HomePage() {
                                 {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
                                 {copied ? 'Copied!' : 'Copy Link'}
                             </button>
+
+                            <button
+                                onClick={() => setShowQR(!showQR)}
+                                className="px-6 py-3 rounded-lg font-medium bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors flex items-center gap-2"
+                            >
+                                <QrCodeIcon className="w-5 h-5" />
+                                {showQR ? 'Hide QR' : 'Show QR Code'}
+                            </button>
+
                             <button
                                 onClick={() => {
                                     setShareUrl(null)
                                     setSelectedFile(null)
+                                    setShowQR(false)
                                 }}
                                 className="px-6 py-3 rounded-lg font-medium bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
                             >
                                 Upload Another
                             </button>
                         </div>
+
+                        {showQR && (
+                            <div className="mt-6">
+                                <QRCode url={shareUrl} />
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
@@ -185,6 +227,14 @@ export default function HomePage() {
                     description="Files expire automatically for privacy."
                 />
             </div>
+
+            {/* File Preview Modal */}
+            {showPreview && (
+                <FilePreviewModal
+                    file={selectedFile}
+                    onClose={() => setShowPreview(false)}
+                />
+            )}
         </div>
     )
 }

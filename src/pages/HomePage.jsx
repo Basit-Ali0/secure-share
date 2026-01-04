@@ -33,14 +33,16 @@ export default function HomePage() {
             setUploadProgress(0)
 
             // Step 1: Encrypt file in browser
-            setUploadStatus('Encrypting file...')
-            setUploadProgress(20)
+            setUploadStatus('Encrypting file in your browser...')
+            setUploadProgress(5)
 
             const encrypted = await encryptFile(selectedFile)
+
+            setUploadProgress(40) // Encryption complete
             const fileId = crypto.randomUUID()
 
             // Step 2: Upload encrypted blob to Supabase
-            setUploadStatus('Uploading to cloud...')
+            setUploadStatus('Uploading encrypted file...')
             setUploadProgress(50)
 
             const { path } = await uploadEncryptedFile(encrypted.encryptedBlob, fileId)
@@ -146,6 +148,7 @@ export default function HomePage() {
                         progress={uploadProgress}
                         fileName={selectedFile?.name}
                         status={uploadStatus}
+                        encryptionNote={uploadProgress < 40}
                     />
                 )}
 

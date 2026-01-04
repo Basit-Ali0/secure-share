@@ -57,7 +57,7 @@ export default function HomePage() {
             const { detectStorageTier } = await import('../utils/storageRouter')
             const tier = detectStorageTier(encrypted.encryptedBlob.size)
 
-            setUploadStatus(`Uploading encrypted file (${tier.description})...`)
+            setUploadStatus('Uploading encrypted file...')
             setUploadProgress(40)
 
             // Step 3: Upload with progress tracking

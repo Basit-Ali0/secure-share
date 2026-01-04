@@ -16,17 +16,17 @@ export default function Header() {
 
                 {/* Theme Toggle */}
                 <button
-                    onClick={toggle Theme}
-                className="p-2 rounded-lg glass-card glass-hover text-gray-900 dark:text-white"
-                aria-label="Toggle theme"
-        >
-                {theme === 'light' ? (
-                    <Moon className="w-5 h-5" />
-                ) : (
-                    <Sun className="w-5 h-5" />
-                )}
-            </button>
-        </div>
-    </header >
-  )
+                    onClick={toggleTheme}
+                    className="p-2 rounded-lg glass-card glass-hover text-gray-900 dark:text-white"
+                    aria-label="Toggle theme"
+                >
+                    {theme === 'light' ? (
+                        <Moon className="w-5 h-5" />
+                    ) : (
+                        <Sun className="w-5 h-5" />
+                    )}
+                </button>
+            </div>
+        </header>
+    )
 }

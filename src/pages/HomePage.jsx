@@ -16,7 +16,7 @@ export default function HomePage() {
                 <h1 className="text-5xl md:text-6xl font-bold text-gray-900 dark:text-white mb-4">
                     Share Files Securely
                     <br />
-                    <span className="bg-gradient-to-r from-primary-600 to-purple-600 bg-clip-text text-transparent">Zero-Knowledge Encryption</span>
+                    <span className="text-primary-600 dark:text-primary-400">Zero-Knowledge Encryption</span>
                 </h1>
                 <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
                     Upload files up to 5GB with end-to-end encryption. Your files, your keys, your privacy.

@@ -1,6 +1,5 @@
 import { X } from 'lucide-react'
 import { getFileIcon, getFileType, formatFileSize } from '../../utils/fileUtils'
-import TierBadge from './TierBadge'
 
 export default function FilePreview({ file, onRemove }) {
     const fileType = getFileType(file.type)
@@ -22,22 +21,19 @@ export default function FilePreview({ file, onRemove }) {
 
             <div className="flex items-center gap-4">
                 {/* File Icon */}
-                <div className="p-4 rounded-xl glass-card">
+                <div className="p-4 rounded-xl bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800">
                     <FileIcon className="w-10 h-10 text-primary-600 dark:text-primary-400" />
                 </div>
 
                 {/* File Info */}
                 <div className="flex-1">
-                    <p className="text-gray-900 dark:text-white font-medium truncate max-w-md">
+                    <p className="text-gray-900 dark:text-white font-semibold text-lg truncate max-w-md">
                         {file.name}
                     </p>
                     <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">
                         {fileType} • {fileSize}
                     </p>
                 </div>
-
-                {/* Tier Badge */}
-                <TierBadge fileSize={file.size} />
             </div>
         </div>
     )

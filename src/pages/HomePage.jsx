@@ -28,6 +28,18 @@ export default function HomePage() {
     const handleUpload = async () => {
         if (!selectedFile) return
 
+        // Warn for very large files
+        const fileSizeMB = selectedFile.size / (1024 * 1024)
+        if (fileSizeMB > 100) {
+            const proceed = confirm(
+                `Warning: This file is ${fileSizeMB.toFixed(0)}MB. ` +
+                `Large files may take several minutes to encrypt and upload. ` +
+                `Files over 50MB may fail to upload to Supabase. ` +
+                `\n\nContinue anyway?`
+            )
+            if (!proceed) return
+        }
+
         try {
             setUploading(true)
             setUploadProgress(0)

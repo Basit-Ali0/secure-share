@@ -16,7 +16,7 @@ export default function HomePage() {
     const navigate = useNavigate()
 
     const handleFileSelect = (file) => {
-    setSelected File(file)
+        setSelectedFile(file)
         setShareUrl(null)
         setCopied(false)
     }

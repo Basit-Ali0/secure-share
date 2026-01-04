@@ -6,7 +6,7 @@ import FilePreviewModal from '../components/FileUpload/FilePreviewModal'
 import QRCode from '../components/SharePage/QRCode'
 import { Shield, Lock, Zap, Globe, Check, Copy, Eye, QrCode as QrCodeIcon } from 'lucide-react'
 import { encryptFile } from '../utils/encryption'
-import { uploadEncryptedFile, saveFileMetadata } from '../utils/supabase'
+import { saveFileMetadata } from '../utils/supabase'
 
 export default function HomePage() {
     const [selectedFile, setSelectedFile] = useState(null)
@@ -38,18 +38,30 @@ export default function HomePage() {
 
             const encrypted = await encryptFile(selectedFile)
 
-            setUploadProgress(40) // Encryption complete
+            setUploadProgress(35) // Encryption complete
             const fileId = crypto.randomUUID()
 
-            // Step 2: Upload encrypted blob to Supabase
-            setUploadStatus('Uploading encrypted file...')
-            setUploadProgress(50)
+            // Step 2: Detect storage tier
+            const { detectStorageTier } = await import('../utils/storageRouter')
+            const tier = detectStorageTier(encrypted.encryptedBlob.size)
 
-            const { path } = await uploadEncryptedFile(encrypted.encryptedBlob, fileId)
+            setUploadStatus(`Uploading encrypted file (${tier.description})...`)
+            setUploadProgress(40)
 
-            // Step 3: Save metadata with custom expiry
+            // Step 3: Upload with progress tracking
+            const { uploadEncryptedFile } = await import('../utils/uploadHelpers')
+            const { path } = await uploadEncryptedFile(
+                encrypted.encryptedBlob,
+                fileId,
+                (progress) => {
+                    // Map upload progress from 40-80%
+                    setUploadProgress(40 + (progress * 0.4))
+                }
+            )
+
+            // Step 4: Save metadata
             setUploadStatus('Saving metadata...')
-            setUploadProgress(80)
+            setUploadProgress(85)
 
             const expiresAt = new Date()
             if (selectedExpiry.unit === 'hours') {

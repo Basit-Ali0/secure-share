@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { Download, Lock, AlertCircle, Loader } from 'lucide-react'
 import { getFileMetadata, downloadEncryptedFile, incrementDownloadCount } from '../utils/supabase'
 import { decryptFile } from '../utils/encryption'
+import { decryptFileHybrid } from '../utils/hybridEncryption'
 import { formatFileSize, getFileIcon } from '../utils/fileUtils'
 import QRCode from '../components/SharePage/QRCode'
 
@@ -38,34 +39,19 @@ export default function SharePage() {
             setDownloading(true)
             setDownloadProgress(10)
 
-            // Get encryption keys from URL fragment
             const hash = window.location.hash.substring(1)
             const params = new URLSearchParams(hash)
-            const key = params.get('key')
-            const iv = params.get('iv')
 
-            if (!key || !iv) {
-                throw new Error('Encryption keys missing from URL. Invalid share link.')
+            // Detect encryption mode from URL or metadata
+            const isHybridMode = metadata.encryption_mode === 'hybrid' || params.has('ck')
+
+            if (isHybridMode) {
+                // Hybrid Mode Download
+                await downloadHybridMode(params)
+            } else {
+                // Zero-Knowledge Mode Download
+                await downloadZeroKnowledgeMode(params)
             }
-
-            // Download encrypted file
-            setDownloadProgress(30)
-            const encryptedBlob = await downloadEncryptedFile(metadata.storage_path)
-
-            // Decrypt file
-            setDownloadProgress(60)
-            const decryptedBlob = await decryptFile(encryptedBlob, key, iv)
-
-            // Trigger download
-            setDownloadProgress(90)
-            const url = URL.createObjectURL(decryptedBlob)
-            const a = document.createElement('a')
-            a.href = url
-            a.download = metadata.original_name
-            document.body.appendChild(a)
-            a.click()
-            document.body.removeChild(a)
-            URL.revokeObjectURL(url)
 
             // Increment download count
             await incrementDownloadCount(fileId)
@@ -74,7 +60,6 @@ export default function SharePage() {
             setTimeout(() => {
                 setDownloading(false)
                 setDownloadProgress(0)
-                // Reload metadata to show updated download count
                 loadFileMetadata()
             }, 1000)
 
@@ -84,6 +69,73 @@ export default function SharePage() {
             setDownloading(false)
             setDownloadProgress(0)
         }
+    }
+
+    async function downloadZeroKnowledgeMode(params) {
+        const key = params.get('key')
+        const iv = params.get('iv')
+
+        if (!key || !iv) {
+            throw new Error('Encryption keys missing from URL. Invalid share link.')
+        }
+
+        setDownloadProgress(30)
+        const encryptedBlob = await downloadEncryptedFile(metadata.storage_path)
+
+        setDownloadProgress(60)
+        const decryptedBlob = await decryptFile(encryptedBlob, key, iv)
+
+        setDownloadProgress(90)
+        triggerDownload(decryptedBlob, metadata.original_name)
+    }
+
+    async function downloadHybridMode(params) {
+        const clientKey = params.get('ck')
+
+        if (!clientKey) {
+            throw new Error('Client key missing from URL. Invalid share link.')
+        }
+
+        setDownloadProgress(20)
+
+        // Fetch server key from API
+        const response = await fetch(`/api/download-hybrid/${fileId}?clientKey=${clientKey}`)
+        if (!response.ok) {
+            const error = await response.json()
+            throw new Error(error.message || 'Failed to fetch download info')
+        }
+
+        const downloadInfo = await response.json()
+
+        setDownloadProgress(40)
+
+        // Download encrypted file
+        const encryptedBlob = await downloadEncryptedFile(downloadInfo.storagePath)
+
+        setDownloadProgress(60)
+
+        // Decrypt with hybrid keys
+        const decryptedBlob = await decryptFileHybrid(
+            encryptedBlob,
+            downloadInfo.serverKey,
+            clientKey,
+            downloadInfo.iv,
+            downloadInfo.authTag
+        )
+
+        setDownloadProgress(90)
+        triggerDownload(decryptedBlob, downloadInfo.originalName)
+    }
+
+    function triggerDownload(blob, filename) {
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
     }
 
     if (loading) {
@@ -124,6 +176,7 @@ export default function SharePage() {
     const createdDate = new Date(metadata.created_at).toLocaleDateString()
     const expiresDate = new Date(metadata.expires_at).toLocaleString()
     const shareUrl = window.location.href
+    const isHybrid = metadata.encryption_mode === 'hybrid'
 
     return (
         <div className="container mx-auto px-6 py-12">
@@ -156,10 +209,13 @@ export default function SharePage() {
                             <Lock className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
                             <div className="text-sm">
                                 <p className="font-semibold text-blue-900 dark:text-blue-300 mb-1">
-                                    End-to-End Encrypted
+                                    {isHybrid ? 'Hybrid Encryption' : 'Zero-Knowledge Encryption'}
                                 </p>
                                 <p className="text-blue-800 dark:text-blue-400">
-                                    This file is encrypted with AES-256-GCM. Decryption happens in your browser using the key in the URL.
+                                    {isHybrid
+                                        ? 'This file is encrypted with hybrid AES-256-GCM. Server holds half the key, you hold the other half in the URL.'
+                                        : 'This file is encrypted with AES-256-GCM. Decryption happens in your browser using the key in the URL.'
+                                    }
                                 </p>
                             </div>
                         </div>

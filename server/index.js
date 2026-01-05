@@ -2,7 +2,7 @@ import express from 'express'
 import multer from 'multer'
 import cors from 'cors'
 import { createClient } from '@supabase/supabase-js'
-import { encryptFileHybrid, encryptServerKey } from './hybridEncryption.js'
+import { encryptFileHybrid, encryptServerKey, decryptServerKey } from './hybridEncryption.js'
 import dotenv from 'dotenv'
 
 dotenv.config()
@@ -100,8 +100,13 @@ app.get('/api/download-hybrid/:fileId', async (req, res) => {
             return res.status(410).json({ message: 'File has expired' })
         }
 
+        // Decrypt server key with master key before sending to client
+        const plainServerKey = decryptServerKey(metadata.server_key)
+
+        console.log(`[Hybrid Download] Serving ${fileId} to client`)
+
         res.json({
-            serverKey: metadata.server_key, // Encrypted server key
+            serverKey: plainServerKey, // PLAIN server key (decrypted)
             iv: metadata.iv,
             authTag: metadata.auth_tag,
             storagePath: metadata.storage_path,
@@ -113,6 +118,12 @@ app.get('/api/download-hybrid/:fileId', async (req, res) => {
         res.status(500).json({ message: error.message })
     }
 })
+
+const PORT = process.env.PORT || 3000
+app.listen(PORT, () => {
+    console.log(`🚀 Hybrid encryption server running on port ${PORT}`)
+})
+
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, () => {

@@ -84,19 +84,28 @@ export default function HomePage() {
 
             await saveFileMetadata({
                 fileId,
-                originalName: encrypted.originalName,
-                fileType: encrypted.originalType,
-                fileSize: encrypted.originalSize,
+                originalName: selectedFile.name,
+                fileType: selectedFile.type,
+                fileSize: selectedFile.size,
                 storagePath: path,
-                expiresAt: expiresAt.toISOString()
+                expiresAt: expiresAt.toISOString(),
+                encryptionMode,
+                serverKey: keys.serverKey || null,
+                iv: keys.iv || null,
+                authTag: keys.authTag || null
             })
 
-            // Step 4: Generate share URL with keys in fragment
             setUploadStatus('Complete!')
             setUploadProgress(100)
 
             const baseUrl = window.location.origin
-            const url = `${baseUrl}/share/${fileId}#key=${encrypted.key}&iv=${encrypted.iv}`
+            let url
+
+            if (encryptionMode === 'zero-knowledge') {
+                url = `${baseUrl}/share/${fileId}#key=${keys.key}&iv=${keys.iv}`
+            } else {
+                url = `${baseUrl}/share/${fileId}#ck=${keys.clientKey}`
+            }
 
             setShareUrl(url)
 
@@ -134,6 +143,11 @@ export default function HomePage() {
             <div className="mb-16 max-w-2xl mx-auto">
                 {!uploading && !shareUrl && (
                     <>
+                        <EncryptionModeSelector
+                            selected={encryptionMode}
+                            onChange={setEncryptionMode}
+                        />
+
                         <DragDropZone onFileSelect={handleFileSelect} />
 
                         {selectedFile && (

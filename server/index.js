@@ -119,13 +119,9 @@ app.get('/api/download-hybrid/:fileId', async (req, res) => {
     }
 })
 
-const PORT = process.env.PORT || 3000
-app.listen(PORT, () => {
-    console.log(`🚀 Hybrid encryption server running on port ${PORT}`)
-})
-
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, () => {
     console.log(`🚀 Hybrid encryption server running on port ${PORT}`)
 })
+

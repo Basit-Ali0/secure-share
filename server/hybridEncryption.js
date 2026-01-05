@@ -1,7 +1,4 @@
-// Server-side encryption utilities for Hybrid mode
-// Server encrypts with client-provided ephemeral key
-
-const crypto = require('crypto')
+import crypto from 'crypto'
 
 /**
  * Encrypt file on server with hybrid key
@@ -9,7 +6,7 @@ const crypto = require('crypto')
  * @param {string} clientKeyHex - Client ephemeral key (hex)
  * @returns {object} Encrypted data with server key
  */
-function encryptFileHybrid(fileBuffer, clientKeyHex) {
+export function encryptFileHybrid(fileBuffer, clientKeyHex) {
     // Generate server-side key
     const serverKey = crypto.randomBytes(16) // 128 bits
 
@@ -46,7 +43,7 @@ function encryptFileHybrid(fileBuffer, clientKeyHex) {
  * @param {string} authTagHex - Auth tag
  * @returns {Buffer} Decrypted data
  */
-function decryptFileHybrid(encryptedData, serverKeyHex, clientKeyHex, ivHex, authTagHex) {
+export function decryptFileHybrid(encryptedData, serverKeyHex, clientKeyHex, ivHex, authTagHex) {
     // Reconstruct combined key
     const serverKey = Buffer.from(serverKeyHex, 'hex')
     const clientKey = Buffer.from(clientKeyHex, 'hex')
@@ -72,7 +69,7 @@ function decryptFileHybrid(encryptedData, serverKeyHex, clientKeyHex, ivHex, aut
  * @param {string} serverKeyHex - Server key to encrypt
  * @returns {string} Encrypted server key
  */
-function encryptServerKey(serverKeyHex) {
+export function encryptServerKey(serverKeyHex) {
     const MASTER_KEY = process.env.ENCRYPTION_MASTER_KEY || 'default-master-key-change-in-production'
 
     const masterKeyHash = crypto.createHash('sha256')
@@ -98,7 +95,7 @@ function encryptServerKey(serverKeyHex) {
  * @param {string} encryptedKeyHex - Encrypted server key
  * @returns {string} Decrypted server key (hex)
  */
-function decryptServerKey(encryptedKeyHex) {
+export function decryptServerKey(encryptedKeyHex) {
     const MASTER_KEY = process.env.ENCRYPTION_MASTER_KEY || 'default-master-key-change-in-production'
 
     const masterKeyHash = crypto.createHash('sha256')
@@ -121,11 +118,4 @@ function decryptServerKey(encryptedKeyHex) {
     ])
 
     return decrypted.toString('hex')
-}
-
-module.exports = {
-    encryptFileHybrid,
-    decryptFileHybrid,
-    encryptServerKey,
-    decryptServerKey
 }

@@ -1,9 +1,11 @@
-const express = require('express')
-const multer = require('multer')
-const cors = require('cors')
-const { createClient } = require('@supabase/supabase-js')
-const { encryptFileHybrid, encryptServerKey } = require('./hybridEncryption')
-require('dotenv').config()
+import express from 'express'
+import multer from 'multer'
+import cors from 'cors'
+import { createClient } from '@supabase/supabase-js'
+import { encryptFileHybrid, encryptServerKey } from './hybridEncryption.js'
+import dotenv from 'dotenv'
+
+dotenv.config()
 
 const app = express()
 const upload = multer({ storage: multer.memoryStorage() })

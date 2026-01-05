@@ -3,10 +3,12 @@ import DragDropZone from '../components/FileUpload/DragDropZone'
 import UploadProgress from '../components/FileUpload/UploadProgress'
 import ExpirySelector, { EXPIRY_OPTIONS } from '../components/FileUpload/ExpirySelector'
 import FilePreviewModal from '../components/FileUpload/FilePreviewModal'
+import EncryptionModeSelector from '../components/FileUpload/EncryptionModeSelector'
 import QRCode from '../components/SharePage/QRCode'
 import { Shield, Lock, Zap, Globe, Check, Copy, Eye, QrCode as QrCodeIcon } from 'lucide-react'
 import { encryptFile } from '../utils/encryption'
 import { saveFileMetadata } from '../utils/supabase'
+import { uploadFileHybrid } from '../utils/hybridUpload'
 
 export default function HomePage() {
     const [selectedFile, setSelectedFile] = useState(null)
@@ -18,6 +20,7 @@ export default function HomePage() {
     const [showPreview, setShowPreview] = useState(false)
     const [showQR, setShowQR] = useState(false)
     const [selectedExpiry, setSelectedExpiry] = useState(EXPIRY_OPTIONS[2]) // Default 24 hours
+    const [encryptionMode, setEncryptionMode] = useState('hybrid') // Default to hybrid (fast)
 
     const handleFileSelect = (file) => {
         setSelectedFile(file)

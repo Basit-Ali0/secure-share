@@ -48,7 +48,11 @@ export async function saveFileMetadata(metadata) {
             storage_path: metadata.storagePath,
             expires_at: metadata.expiresAt,
             password_hash: metadata.passwordHash || null,
-            max_downloads: metadata.maxDownloads || null
+            max_downloads: metadata.maxDownloads || null,
+            encryption_mode: metadata.encryptionMode || 'zero-knowledge',
+            server_key: metadata.serverKey || null,
+            iv: metadata.iv || null,
+            auth_tag: metadata.authTag || null
         })
         .select()
         .single()

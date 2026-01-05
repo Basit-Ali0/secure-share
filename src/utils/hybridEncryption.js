@@ -21,23 +21,13 @@ export function generateClientKey() {
  * @returns {Promise<Blob>} Decrypted file
  */
 export async function decryptFileHybrid(encryptedBlob, serverKeyHex, clientKeyHex, ivHex, authTagHex) {
-    console.log('[Hybrid Decrypt] Server key length:', serverKeyHex.length, 'chars')
-    console.log('[Hybrid Decrypt] Client key length:', clientKeyHex.length, 'chars')
-    console.log('[Hybrid Decrypt] IV length:', ivHex.length, 'chars')
-    console.log('[Hybrid Decrypt] Auth tag length:', authTagHex.length, 'chars')
-
     // Combine server and client keys
     const serverKeyBytes = hexToArrayBuffer(serverKeyHex)
     const clientKeyBytes = hexToArrayBuffer(clientKeyHex)
 
-    console.log('[Hybrid Decrypt] Server key bytes:', serverKeyBytes.byteLength)
-    console.log('[Hybrid Decrypt] Client key bytes:', clientKeyBytes.byteLength)
-
     const combinedKeyBytes = new Uint8Array(32) // 256 bits
     combinedKeyBytes.set(new Uint8Array(serverKeyBytes), 0)
     combinedKeyBytes.set(new Uint8Array(clientKeyBytes), 16)
-
-    console.log('[Hybrid Decrypt] Combined key length:', combinedKeyBytes.length, 'bytes')
 
     // Import combined key
     const key = await crypto.subtle.importKey(
@@ -54,16 +44,11 @@ export async function decryptFileHybrid(encryptedBlob, serverKeyHex, clientKeyHe
     // Read encrypted blob
     const encryptedBuffer = await encryptedBlob.arrayBuffer()
 
-    console.log('[Hybrid Decrypt] Encrypted data length:', encryptedBuffer.byteLength, 'bytes')
-    console.log('[Hybrid Decrypt] Auth tag length:', authTag.byteLength, 'bytes')
-
     // For GCM mode, append auth tag to ciphertext
     // Web Crypto API expects: ciphertext + authTag as one buffer
     const dataWithTag = new Uint8Array(encryptedBuffer.byteLength + authTag.byteLength)
     dataWithTag.set(new Uint8Array(encryptedBuffer), 0)
     dataWithTag.set(new Uint8Array(authTag), encryptedBuffer.byteLength)
-
-    console.log('[Hybrid Decrypt] Data with tag length:', dataWithTag.byteLength, 'bytes')
 
     try {
         const decryptedBuffer = await crypto.subtle.decrypt(
@@ -76,10 +61,8 @@ export async function decryptFileHybrid(encryptedBlob, serverKeyHex, clientKeyHe
             dataWithTag
         )
 
-        console.log('[Hybrid Decrypt] Decryption successful!', decryptedBuffer.byteLength, 'bytes')
         return new Blob([decryptedBuffer])
     } catch (error) {
-        console.error('[Hybrid Decrypt] Decryption error:', error)
         throw new Error(`Decryption failed: ${error.message}. File may be corrupted or keys are incorrect.`)
     }
 }
@@ -101,7 +84,7 @@ function hexToArrayBuffer(hex) {
         throw new Error('Invalid hex string: empty or null')
     }
     if (hex.length % 2 !== 0) {
-        throw new Error(`Invalid hex string length:${hex.length}. Must be even.`)
+        throw new Error(`Invalid hex string length: ${hex.length}. Must be even.`)
     }
 
     const bytes = new Uint8Array(hex.length / 2)

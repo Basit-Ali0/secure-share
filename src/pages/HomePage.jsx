@@ -43,40 +43,68 @@ export default function HomePage() {
             if (!proceed) return
         }
 
+
         try {
             setUploading(true)
             setUploadProgress(0)
 
-            // Step 1: Encrypt file in browser
-            setUploadStatus('Encrypting file in your browser...')
-            setUploadProgress(5)
+            let encrypted, fileId, path, keys
 
-            const encrypted = await encryptFile(selectedFile)
+            if (encryptionMode === 'zero-knowledge') {
+                // Zero-Knowledge Mode: Encrypt in browser
+                setUploadStatus('Encrypting file in your browser...')
+                setUploadProgress(5)
 
-            setUploadProgress(35) // Encryption complete
-            const fileId = crypto.randomUUID()
+                encrypted = await encryptFile(selectedFile)
 
-            // Step 2: Detect storage tier
-            const { detectStorageTier } = await import('../utils/storageRouter')
-            const tier = detectStorageTier(encrypted.encryptedBlob.size)
+                setUploadProgress(35)
+                fileId = crypto.randomUUID()
 
-            setUploadStatus('Uploading encrypted file...')
-            setUploadProgress(40)
+                setUploadStatus('Uploading encrypted file...')
+                setUploadProgress(40)
 
-            // Step 3: Upload with progress tracking
-            const { uploadEncryptedFile } = await import('../utils/uploadHelpers')
-            const { path } = await uploadEncryptedFile(
-                encrypted.encryptedBlob,
-                fileId,
-                (progress) => {
-                    // Map upload progress from 40-80%
-                    setUploadProgress(40 + (progress * 0.4))
+                const { uploadEncryptedFile } = await import('../utils/uploadHelpers')
+                const result = await uploadEncryptedFile(
+                    encrypted.encryptedBlob,
+                    fileId,
+                    (progress) => {
+                        setUploadProgress(40 + (progress * 0.4))
+                    }
+                )
+                path = result.path
+                keys = {
+                    key: encrypted.key,
+                    iv: encrypted.iv
                 }
-            )
 
-            // Step 4: Save metadata
+            } else {
+                // Hybrid Mode: Fast server-side encryption
+                setUploadStatus('Uploading file...')
+                setUploadProgress(20)
+
+                fileId = crypto.randomUUID()
+
+                const result = await uploadFileHybrid(
+                    selectedFile,
+                    fileId,
+                    (progress) => {
+                        setUploadProgress(20 + (progress * 0.6))
+                    }
+                )
+
+                path = result.path
+                keys = {
+                    clientKey: result.clientKey,
+                    serverKey: result.serverKey,
+                    iv: result.iv,
+                    authTag: result.authTag
+                }
+            }
+
+            // Save metadata
             setUploadStatus('Saving metadata...')
             setUploadProgress(85)
+
 
             const expiresAt = new Date()
             if (selectedExpiry.unit === 'hours') {

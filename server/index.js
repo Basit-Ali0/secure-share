@@ -119,9 +119,79 @@ app.get('/api/download-hybrid/:fileId', async (req, res) => {
     }
 })
 
+/**
+ * Cleanup endpoint for automatic file deletion
+ * GET /api/cleanup-expired
+ */
+app.get('/api/cleanup-expired', async (req, res) => {
+    try {
+        console.log('[Cleanup] Starting automatic cleanup...')
+
+        // Get all expired files
+        const { data: expiredFiles, error: fetchError } = await supabase
+            .from('files')
+            .select('file_id, storage_path, original_name')
+            .lt('expires_at', new Date().toISOString())
+
+        if (fetchError) {
+            throw new Error(`Failed to fetch expired files: ${fetchError.message}`)
+        }
+
+        if (!expiredFiles || expiredFiles.length === 0) {
+            console.log('[Cleanup] No expired files found')
+            return res.json({ deleted: 0, message: 'No expired files' })
+        }
+
+        let deletedCount = 0
+        const errors = []
+
+        // Delete each expired file
+        for (const file of expiredFiles) {
+            try {
+                // Delete from storage
+                const { error: storageError } = await supabase.storage
+                    .from('encrypted-files')
+                    .remove([file.storage_path])
+
+                if (storageError) {
+                    errors.push(`Storage: ${file.original_name} - ${storageError.message}`)
+                }
+
+                // Delete from database
+                const { error: dbError } = await supabase
+                    .from('files')
+                    .delete()
+                    .eq('file_id', file.file_id)
+
+                if (dbError) {
+                    errors.push(`Database: ${file.original_name} - ${dbError.message}`)
+                } else {
+                    deletedCount++
+                    console.log(`[Cleanup] Deleted: ${file.original_name}`)
+                }
+
+            } catch (error) {
+                errors.push(`${file.original_name} - ${error.message}`)
+            }
+        }
+
+        console.log(`[Cleanup] Completed: ${deletedCount}/${expiredFiles.length} deleted`)
+
+        res.json({
+            deleted: deletedCount,
+            total_expired: expiredFiles.length,
+            errors: errors.length > 0 ? errors : undefined,
+            message: `Cleaned up ${deletedCount} expired files`
+        })
+
+    } catch (error) {
+        console.error('[Cleanup] Error:', error)
+        res.status(500).json({ message: error.message })
+    }
+})
+
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, () => {
     console.log(`🚀 Hybrid encryption server running on port ${PORT}`)
 })
-

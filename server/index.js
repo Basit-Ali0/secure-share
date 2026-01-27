@@ -1,97 +1,189 @@
+/**
+ * SecureShare Server - Zero-Knowledge File Sharing API
+ * Handles R2 multipart uploads and cleanup
+ */
+
 import express from 'express'
-import multer from 'multer'
 import cors from 'cors'
 import { createClient } from '@supabase/supabase-js'
-import { encryptFileHybrid, encryptServerKey, decryptServerKey } from './hybridEncryption.js'
 import dotenv from 'dotenv'
+import {
+    initiateMultipartUpload,
+    getPresignedPartUrl,
+    completeMultipartUpload,
+    getPresignedDownloadUrl,
+    deleteObject
+} from './r2.js'
 
 dotenv.config()
 
 const app = express()
-const upload = multer({ storage: multer.memoryStorage() })
 
 // Middleware
 app.use(cors())
-app.use(express.json())
+app.use(express.json({ limit: '100mb' }))
 
-// Supabase client
+// Supabase client (for metadata only)
 const supabase = createClient(
     process.env.VITE_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
 )
 
+// ============================================
+// R2 Multipart Upload Endpoints
+// ============================================
+
 /**
- * Hybrid encryption upload endpoint
- * POST /api/upload-hybrid
+ * Initiate multipart upload
+ * POST /api/r2/initiate
  */
-app.post('/api/upload-hybrid', upload.single('file'), async (req, res) => {
+app.post('/api/r2/initiate', async (req, res) => {
     try {
-        const file = req.file
-        const { fileId, clientKey } = req.body
+        const { fileId } = req.body
 
-        if (!file || !fileId || !clientKey) {
-            return res.status(400).json({ message: 'Missing required fields' })
+        if (!fileId) {
+            return res.status(400).json({ message: 'fileId required' })
         }
 
-        console.log(`[Hybrid Upload] Starting encryption for ${fileId}, size: ${file.size} bytes`)
+        console.log(`[R2] Initiating multipart upload for ${fileId}`)
 
-        // Encrypt file with hybrid encryption
-        const encrypted = encryptFileHybrid(file.buffer, clientKey)
+        const result = await initiateMultipartUpload(fileId)
 
-        // Upload encrypted blob to Supabase
-        const filePath = `${fileId}.enc`
-        const { error: uploadError } = await supabase.storage
-            .from('encrypted-files')
-            .upload(filePath, encrypted.encryptedData, {
-                contentType: 'application/octet-stream',
-                upsert: false
-            })
-
-        if (uploadError) {
-            throw new Error(`Storage upload failed: ${uploadError.message}`)
-        }
-
-        console.log(`[Hybrid Upload] File uploaded to storage: ${filePath}`)
-
-        // Encrypt server key with master key before storing
-        const encryptedServerKey = encryptServerKey(encrypted.serverKey)
-
-        // Return encryption metadata (server key, IV, authTag)
-        // Client key is NOT returned - client already has it
-        res.json({
-            path: filePath,
-            serverKey: encryptedServerKey, // Encrypted server key
-            iv: encrypted.iv,
-            authTag: encrypted.authTag
-        })
+        res.json(result)
 
     } catch (error) {
-        console.error('[Hybrid Upload] Error:', error)
+        console.error('[R2 Initiate] Error:', error)
         res.status(500).json({ message: error.message })
     }
 })
 
 /**
- * Hybrid encryption download endpoint
- * GET /api/download-hybrid/:fileId
+ * Get presigned URL for part upload
+ * POST /api/r2/presign-part
  */
-app.get('/api/download-hybrid/:fileId', async (req, res) => {
+app.post('/api/r2/presign-part', async (req, res) => {
     try {
-        const { fileId } = req.params
-        const { clientKey } = req.query
+        const { objectKey, uploadId, partNumber } = req.body
 
-        if (!clientKey) {
-            return res.status(400).json({ message: 'Client key required' })
+        if (!objectKey || !uploadId || !partNumber) {
+            return res.status(400).json({ message: 'objectKey, uploadId, and partNumber required' })
         }
 
-        // Get file metadata from database
-        const { data: metadata, error: metadataError } = await supabase
+        const result = await getPresignedPartUrl(objectKey, uploadId, partNumber)
+
+        res.json(result)
+
+    } catch (error) {
+        console.error('[R2 Presign] Error:', error)
+        res.status(500).json({ message: error.message })
+    }
+})
+
+/**
+ * Complete multipart upload
+ * POST /api/r2/complete
+ */
+app.post('/api/r2/complete', async (req, res) => {
+    try {
+        const { objectKey, uploadId, parts } = req.body
+
+        if (!objectKey || !uploadId || !parts) {
+            return res.status(400).json({ message: 'objectKey, uploadId, and parts required' })
+        }
+
+        console.log(`[R2] Completing multipart upload for ${objectKey}`)
+
+        const result = await completeMultipartUpload(objectKey, uploadId, parts)
+
+        res.json(result)
+
+    } catch (error) {
+        console.error('[R2 Complete] Error:', error)
+        res.status(500).json({ message: error.message })
+    }
+})
+
+/**
+ * Get presigned download URL
+ * GET /api/r2/download/:objectKey
+ */
+app.get('/api/r2/download/*', async (req, res) => {
+    try {
+        const objectKey = req.params[0]
+
+        if (!objectKey) {
+            return res.status(400).json({ message: 'objectKey required' })
+        }
+
+        const result = await getPresignedDownloadUrl(objectKey)
+
+        res.json(result)
+
+    } catch (error) {
+        console.error('[R2 Download] Error:', error)
+        res.status(500).json({ message: error.message })
+    }
+})
+
+// ============================================
+// File Metadata Endpoints (Supabase)
+// ============================================
+
+/**
+ * Save file metadata
+ * POST /api/files/metadata
+ */
+app.post('/api/files/metadata', async (req, res) => {
+    try {
+        const {
+            fileId,
+            originalName,
+            fileType,
+            fileSize,
+            storagePath,
+            storageBackend,
+            chunkCount,
+            expiresAt
+        } = req.body
+
+        const { error } = await supabase.from('files').insert({
+            file_id: fileId,
+            original_name: originalName,
+            file_type: fileType,
+            file_size: fileSize,
+            storage_path: storagePath,
+            storage_backend: storageBackend || 'r2',
+            chunk_count: chunkCount || 1,
+            expires_at: expiresAt
+        })
+
+        if (error) {
+            throw new Error(`Failed to save metadata: ${error.message}`)
+        }
+
+        res.json({ success: true })
+
+    } catch (error) {
+        console.error('[Metadata Save] Error:', error)
+        res.status(500).json({ message: error.message })
+    }
+})
+
+/**
+ * Get file metadata
+ * GET /api/files/:fileId
+ */
+app.get('/api/files/:fileId', async (req, res) => {
+    try {
+        const { fileId } = req.params
+
+        const { data: metadata, error } = await supabase
             .from('files')
             .select('*')
             .eq('file_id', fileId)
             .single()
 
-        if (metadataError || !metadata) {
+        if (error || !metadata) {
             return res.status(404).json({ message: 'File not found' })
         }
 
@@ -100,37 +192,35 @@ app.get('/api/download-hybrid/:fileId', async (req, res) => {
             return res.status(410).json({ message: 'File has expired' })
         }
 
-        // Decrypt server key with master key before sending to client
-        const plainServerKey = decryptServerKey(metadata.server_key)
+        // Increment download count
+        await supabase
+            .from('files')
+            .update({ download_count: (metadata.download_count || 0) + 1 })
+            .eq('file_id', fileId)
 
-        console.log(`[Hybrid Download] Serving ${fileId} to client`)
-
-        res.json({
-            serverKey: plainServerKey, // PLAIN server key (decrypted)
-            iv: metadata.iv,
-            authTag: metadata.auth_tag,
-            storagePath: metadata.storage_path,
-            originalName: metadata.original_name
-        })
+        res.json(metadata)
 
     } catch (error) {
-        console.error('[Hybrid Download] Error:', error)
+        console.error('[Metadata Get] Error:', error)
         res.status(500).json({ message: error.message })
     }
 })
 
+// ============================================
+// Cleanup Endpoint
+// ============================================
+
 /**
- * Cleanup endpoint for automatic file deletion
+ * Clean up expired files
  * GET /api/cleanup-expired
  */
 app.get('/api/cleanup-expired', async (req, res) => {
     try {
         console.log('[Cleanup] Starting automatic cleanup...')
 
-        // Get all expired files
         const { data: expiredFiles, error: fetchError } = await supabase
             .from('files')
-            .select('file_id, storage_path, original_name')
+            .select('file_id, storage_path, storage_backend, original_name')
             .lt('expires_at', new Date().toISOString())
 
         if (fetchError) {
@@ -145,16 +235,15 @@ app.get('/api/cleanup-expired', async (req, res) => {
         let deletedCount = 0
         const errors = []
 
-        // Delete each expired file
         for (const file of expiredFiles) {
             try {
-                // Delete from storage
-                const { error: storageError } = await supabase.storage
-                    .from('encrypted-files')
-                    .remove([file.storage_path])
-
-                if (storageError) {
-                    errors.push(`Storage: ${file.original_name} - ${storageError.message}`)
+                // Delete from storage (R2 or Supabase)
+                if (file.storage_backend === 'r2') {
+                    await deleteObject(file.storage_path)
+                } else {
+                    await supabase.storage
+                        .from('encrypted-files')
+                        .remove([file.storage_path])
                 }
 
                 // Delete from database
@@ -164,7 +253,7 @@ app.get('/api/cleanup-expired', async (req, res) => {
                     .eq('file_id', file.file_id)
 
                 if (dbError) {
-                    errors.push(`Database: ${file.original_name} - ${dbError.message}`)
+                    errors.push(`${file.original_name} - ${dbError.message}`)
                 } else {
                     deletedCount++
                     console.log(`[Cleanup] Deleted: ${file.original_name}`)
@@ -190,8 +279,20 @@ app.get('/api/cleanup-expired', async (req, res) => {
     }
 })
 
+// ============================================
+// Health Check
+// ============================================
+
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() })
+})
+
+// ============================================
+// Start Server
+// ============================================
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, () => {
-    console.log(`🚀 Hybrid encryption server running on port ${PORT}`)
+    console.log(`🚀 Zero-Knowledge Server running on port ${PORT}`)
+    console.log(`📦 R2 Bucket: ${process.env.R2_BUCKET_NAME || 'secure-share-files'}`)
 })

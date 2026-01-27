@@ -3,24 +3,23 @@ import DragDropZone from '../components/FileUpload/DragDropZone'
 import UploadProgress from '../components/FileUpload/UploadProgress'
 import ExpirySelector, { EXPIRY_OPTIONS } from '../components/FileUpload/ExpirySelector'
 import FilePreviewModal from '../components/FileUpload/FilePreviewModal'
-import EncryptionModeSelector from '../components/FileUpload/EncryptionModeSelector'
 import QRCode from '../components/SharePage/QRCode'
 import { Shield, Lock, Zap, Globe, Check, Copy, Eye, QrCode as QrCodeIcon } from 'lucide-react'
-import { encryptFile } from '../utils/encryption'
-import { saveFileMetadata } from '../utils/supabase'
-import { uploadFileHybrid } from '../utils/hybridUpload'
+import { encryptFileStreaming, terminateWorkerPool } from '../utils/streamingEncryption'
+import { uploadToR2 } from '../utils/r2Upload'
+import { formatFileSize } from '../utils/fileUtils'
 
 export default function HomePage() {
     const [selectedFile, setSelectedFile] = useState(null)
     const [uploading, setUploading] = useState(false)
     const [uploadProgress, setUploadProgress] = useState(0)
     const [uploadStatus, setUploadStatus] = useState('')
+    const [uploadStage, setUploadStage] = useState('')
     const [shareUrl, setShareUrl] = useState(null)
     const [copied, setCopied] = useState(false)
     const [showPreview, setShowPreview] = useState(false)
     const [showQR, setShowQR] = useState(false)
     const [selectedExpiry, setSelectedExpiry] = useState(EXPIRY_OPTIONS[2]) // Default 24 hours
-    const [encryptionMode, setEncryptionMode] = useState('hybrid') // Default to hybrid (fast)
 
     const handleFileSelect = (file) => {
         setSelectedFile(file)
@@ -31,80 +30,48 @@ export default function HomePage() {
     const handleUpload = async () => {
         if (!selectedFile) return
 
-        // Warn for very large files
-        const fileSizeMB = selectedFile.size / (1024 * 1024)
-        if (fileSizeMB > 100) {
-            const proceed = confirm(
-                `Warning: This file is ${fileSizeMB.toFixed(0)}MB. ` +
-                `Large files may take several minutes to encrypt and upload. ` +
-                `Files over 50MB may fail to upload to Supabase. ` +
-                `\n\nContinue anyway?`
-            )
-            if (!proceed) return
-        }
-
-
         try {
             setUploading(true)
             setUploadProgress(0)
+            setUploadStage('preparing')
 
-            let encrypted, fileId, path, keys
+            const fileId = crypto.randomUUID()
 
-            if (encryptionMode === 'zero-knowledge') {
-                // Zero-Knowledge Mode: Encrypt in browser
-                setUploadStatus('Encrypting file in your browser...')
-                setUploadProgress(5)
+            // Phase 1: Streaming encryption (0-50%)
+            setUploadStatus('Encrypting file in your browser...')
+            setUploadStage('encrypting')
 
-                encrypted = await encryptFile(selectedFile)
-
-                setUploadProgress(35)
-                fileId = crypto.randomUUID()
-
-                setUploadStatus('Uploading encrypted file...')
-                setUploadProgress(40)
-
-                const { uploadEncryptedFile } = await import('../utils/uploadHelpers')
-                const result = await uploadEncryptedFile(
-                    encrypted.encryptedBlob,
-                    fileId,
-                    (progress) => {
-                        setUploadProgress(40 + (progress * 0.4))
-                    }
-                )
-                path = result.path
-                keys = {
-                    key: encrypted.key,
-                    iv: encrypted.iv
+            const encryptionResult = await encryptFileStreaming(
+                selectedFile,
+                (progress, stage, completed, total) => {
+                    setUploadProgress(progress * 0.5) // 0-50%
+                    setUploadStatus(`Encrypting: chunk ${completed}/${total}`)
                 }
+            )
 
-            } else {
-                // Hybrid Mode: Fast server-side encryption
-                setUploadStatus('Uploading file...')
-                setUploadProgress(20)
+            // Phase 2: Upload to R2 (50-95%)
+            setUploadStatus('Uploading encrypted file...')
+            setUploadStage('uploading')
 
-                fileId = crypto.randomUUID()
-
-                const result = await uploadFileHybrid(
-                    selectedFile,
-                    fileId,
-                    (progress) => {
-                        setUploadProgress(20 + (progress * 0.6))
+            const uploadResult = await uploadToR2(
+                encryptionResult.encryptedChunks,
+                encryptionResult.authTags,
+                fileId,
+                (progress, stage) => {
+                    setUploadProgress(50 + progress * 0.45) // 50-95%
+                    if (stage === 'initiating') {
+                        setUploadStatus('Starting upload...')
+                    } else if (stage === 'uploading') {
+                        setUploadStatus('Uploading encrypted chunks...')
+                    } else if (stage === 'finalizing') {
+                        setUploadStatus('Finalizing upload...')
                     }
-                )
-
-                path = result.path
-                keys = {
-                    clientKey: result.clientKey,
-                    serverKey: result.serverKey,
-                    iv: result.iv,
-                    authTag: result.authTag
                 }
-            }
+            )
 
-            // Save metadata
+            // Phase 3: Save metadata (95-100%)
             setUploadStatus('Saving metadata...')
-            setUploadProgress(85)
-
+            setUploadProgress(95)
 
             const expiresAt = new Date()
             if (selectedExpiry.unit === 'hours') {
@@ -113,31 +80,27 @@ export default function HomePage() {
                 expiresAt.setDate(expiresAt.getDate() + selectedExpiry.value)
             }
 
-            await saveFileMetadata({
-                fileId,
-                originalName: selectedFile.name,
-                fileType: selectedFile.type,
-                fileSize: selectedFile.size,
-                storagePath: path,
-                expiresAt: expiresAt.toISOString(),
-                encryptionMode,
-                serverKey: keys.serverKey || null,
-                iv: keys.iv || null,
-                authTag: keys.authTag || null
+            await fetch('/api/files/metadata', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fileId,
+                    originalName: selectedFile.name,
+                    fileType: selectedFile.type,
+                    fileSize: selectedFile.size,
+                    storagePath: uploadResult.objectKey,
+                    storageBackend: 'r2',
+                    chunkCount: uploadResult.totalChunks,
+                    expiresAt: expiresAt.toISOString()
+                })
             })
 
             setUploadStatus('Complete!')
             setUploadProgress(100)
 
+            // Generate share URL with keys in fragment (zero-knowledge!)
             const baseUrl = window.location.origin
-            let url
-
-            if (encryptionMode === 'zero-knowledge') {
-                url = `${baseUrl}/share/${fileId}#key=${keys.key}&iv=${keys.iv}`
-            } else {
-                url = `${baseUrl}/share/${fileId}#ck=${keys.clientKey}`
-            }
-
+            const url = `${baseUrl}/share/${fileId}#key=${encryptionResult.keyHex}&iv=${encryptionResult.ivHex}`
             setShareUrl(url)
 
         } catch (error) {
@@ -145,6 +108,7 @@ export default function HomePage() {
             alert(`Upload failed: ${error.message}`)
         } finally {
             setUploading(false)
+            terminateWorkerPool()
         }
     }
 
@@ -174,11 +138,6 @@ export default function HomePage() {
             <div className="mb-16 max-w-2xl mx-auto">
                 {!uploading && !shareUrl && (
                     <>
-                        <EncryptionModeSelector
-                            selected={encryptionMode}
-                            onChange={setEncryptionMode}
-                        />
-
                         <DragDropZone onFileSelect={handleFileSelect} />
 
                         {selectedFile && (
@@ -217,7 +176,7 @@ export default function HomePage() {
                         progress={uploadProgress}
                         fileName={selectedFile?.name}
                         status={uploadStatus}
-                        encryptionNote={uploadProgress < 40}
+                        encryptionNote={uploadStage === 'encrypting'}
                     />
                 )}
 
@@ -272,6 +231,11 @@ export default function HomePage() {
                                 <QRCode url={shareUrl} />
                             </div>
                         )}
+
+                        <div className="mt-4 text-sm text-gray-500 dark:text-gray-400">
+                            <Shield className="w-4 h-4 inline mr-1" />
+                            Zero-Knowledge: Encryption keys are only in the URL
+                        </div>
                     </div>
                 )}
             </div>

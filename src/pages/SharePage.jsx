@@ -1,10 +1,9 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { Download, Lock, AlertCircle, Loader } from 'lucide-react'
-import { getFileMetadata, downloadEncryptedFile, incrementDownloadCount } from '../utils/supabase'
-import { decryptFile } from '../utils/encryption'
-import { decryptFileHybrid } from '../utils/hybridEncryption'
+import { Download, Lock, AlertCircle, Loader, Shield } from 'lucide-react'
 import { formatFileSize, getFileIcon } from '../utils/fileUtils'
+import { downloadFromR2 } from '../utils/r2Upload'
+import { decryptFileStreaming, terminateWorkerPool } from '../utils/streamingEncryption'
 import QRCode from '../components/SharePage/QRCode'
 
 export default function SharePage() {
@@ -16,6 +15,7 @@ export default function SharePage() {
     const [error, setError] = useState(null)
     const [downloading, setDownloading] = useState(false)
     const [downloadProgress, setDownloadProgress] = useState(0)
+    const [downloadStatus, setDownloadStatus] = useState('')
     const [showQR, setShowQR] = useState(false)
 
     useEffect(() => {
@@ -25,7 +25,15 @@ export default function SharePage() {
     async function loadFileMetadata() {
         try {
             setLoading(true)
-            const data = await getFileMetadata(fileId)
+
+            const response = await fetch(`/api/files/${fileId}`)
+
+            if (!response.ok) {
+                const data = await response.json()
+                throw new Error(data.message || 'File not found')
+            }
+
+            const data = await response.json()
             setMetadata(data)
         } catch (err) {
             setError(err.message)
@@ -37,30 +45,56 @@ export default function SharePage() {
     async function handleDownload() {
         try {
             setDownloading(true)
-            setDownloadProgress(10)
+            setDownloadProgress(0)
 
+            // Extract keys from URL fragment (zero-knowledge!)
             const hash = window.location.hash.substring(1)
             const params = new URLSearchParams(hash)
 
-            // Detect encryption mode from URL or metadata
-            const isHybridMode = metadata.encryption_mode === 'hybrid' || params.has('ck')
+            const keyHex = params.get('key')
+            const ivHex = params.get('iv')
 
-            if (isHybridMode) {
-                // Hybrid Mode Download
-                await downloadHybridMode(params)
-            } else {
-                // Zero-Knowledge Mode Download
-                await downloadZeroKnowledgeMode(params)
+            if (!keyHex || !ivHex) {
+                throw new Error('Encryption keys missing from URL. Invalid share link.')
             }
 
-            // Increment download count
-            await incrementDownloadCount(fileId)
+            // Phase 1: Download encrypted chunks from R2 (0-40%)
+            setDownloadStatus('Downloading encrypted file...')
+
+            const { encryptedChunks, authTags } = await downloadFromR2(
+                metadata.storage_path,
+                metadata.chunk_count || 1,
+                (progress) => {
+                    setDownloadProgress(progress * 0.4)
+                }
+            )
+
+            // Phase 2: Decrypt chunks in browser (40-90%)
+            setDownloadStatus('Decrypting in your browser...')
+
+            const decryptedBlob = await decryptFileStreaming(
+                encryptedChunks,
+                authTags,
+                keyHex,
+                ivHex,
+                (progress) => {
+                    setDownloadProgress(40 + progress * 0.5)
+                }
+            )
+
+            // Phase 3: Trigger download (90-100%)
+            setDownloadProgress(95)
+            setDownloadStatus('Preparing download...')
+
+            triggerDownload(decryptedBlob, metadata.original_name)
 
             setDownloadProgress(100)
+            setDownloadStatus('Complete!')
+
             setTimeout(() => {
                 setDownloading(false)
                 setDownloadProgress(0)
-                loadFileMetadata()
+                loadFileMetadata() // Refresh to show updated download count
             }, 1000)
 
         } catch (err) {
@@ -68,63 +102,9 @@ export default function SharePage() {
             alert(`Download failed: ${err.message}`)
             setDownloading(false)
             setDownloadProgress(0)
+        } finally {
+            terminateWorkerPool()
         }
-    }
-
-    async function downloadZeroKnowledgeMode(params) {
-        const key = params.get('key')
-        const iv = params.get('iv')
-
-        if (!key || !iv) {
-            throw new Error('Encryption keys missing from URL. Invalid share link.')
-        }
-
-        setDownloadProgress(30)
-        const encryptedBlob = await downloadEncryptedFile(metadata.storage_path)
-
-        setDownloadProgress(60)
-        const decryptedBlob = await decryptFile(encryptedBlob, key, iv)
-
-        setDownloadProgress(90)
-        triggerDownload(decryptedBlob, metadata.original_name)
-    }
-
-    async function downloadHybridMode(params) {
-        const clientKey = params.get('ck')
-
-        if (!clientKey) {
-            throw new Error('Client key missing from URL. Invalid share link.')
-        }
-
-        setDownloadProgress(20)
-
-        // Fetch server key from API
-        const response = await fetch(`/api/download-hybrid/${fileId}?clientKey=${clientKey}`)
-        if (!response.ok) {
-            const error = await response.json()
-            throw new Error(error.message || 'Failed to fetch download info')
-        }
-
-        const downloadInfo = await response.json()
-
-        setDownloadProgress(40)
-
-        // Download encrypted file
-        const encryptedBlob = await downloadEncryptedFile(downloadInfo.storagePath)
-
-        setDownloadProgress(60)
-
-        // Decrypt with hybrid keys
-        const decryptedBlob = await decryptFileHybrid(
-            encryptedBlob,
-            downloadInfo.serverKey,
-            clientKey,
-            downloadInfo.iv,
-            downloadInfo.authTag
-        )
-
-        setDownloadProgress(90)
-        triggerDownload(decryptedBlob, downloadInfo.originalName)
     }
 
     function triggerDownload(blob, filename) {
@@ -176,7 +156,6 @@ export default function SharePage() {
     const createdDate = new Date(metadata.created_at).toLocaleDateString()
     const expiresDate = new Date(metadata.expires_at).toLocaleString()
     const shareUrl = window.location.href
-    const isHybrid = metadata.encryption_mode === 'hybrid'
 
     return (
         <div className="container mx-auto px-6 py-12">
@@ -204,18 +183,16 @@ export default function SharePage() {
                     </div>
 
                     {/* Security Notice */}
-                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+                    <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 mb-6">
                         <div className="flex items-start gap-3">
-                            <Lock className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                            <Shield className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
                             <div className="text-sm">
-                                <p className="font-semibold text-blue-900 dark:text-blue-300 mb-1">
-                                    {isHybrid ? 'Hybrid Encryption' : 'Zero-Knowledge Encryption'}
+                                <p className="font-semibold text-green-900 dark:text-green-300 mb-1">
+                                    Zero-Knowledge Encryption
                                 </p>
-                                <p className="text-blue-800 dark:text-blue-400">
-                                    {isHybrid
-                                        ? 'This file is encrypted with hybrid AES-256-GCM. Server holds half the key, you hold the other half in the URL.'
-                                        : 'This file is encrypted with AES-256-GCM. Decryption happens in your browser using the key in the URL.'
-                                    }
+                                <p className="text-green-800 dark:text-green-400">
+                                    This file is encrypted with AES-256-GCM. Decryption happens entirely in your browser.
+                                    The server never sees your data or encryption keys.
                                 </p>
                             </div>
                         </div>
@@ -230,7 +207,7 @@ export default function SharePage() {
                         {downloading ? (
                             <>
                                 <Loader className="w-6 h-6 animate-spin" />
-                                Downloading... {downloadProgress}%
+                                {downloadStatus} ({Math.round(downloadProgress)}%)
                             </>
                         ) : (
                             <>

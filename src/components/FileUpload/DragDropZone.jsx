@@ -1,10 +1,7 @@
 import { useState, useRef } from 'react'
-import { Upload, File } from 'lucide-react'
-import FilePreview from './FilePreview'
 
-export default function DragDropZone({ onFileSelect }) {
+export default function DragDropZone({ onFileSelect, selectedFile }) {
     const [isDragging, setIsDragging] = useState(false)
-    const [selectedFile, setSelectedFile] = useState(null)
     const fileInputRef = useRef(null)
 
     const handleDragEnter = (e) => {
@@ -43,7 +40,6 @@ export default function DragDropZone({ onFileSelect }) {
     }
 
     const handleFileSelection = (file) => {
-        setSelectedFile(file)
         if (onFileSelect) {
             onFileSelect(file)
         }
@@ -53,70 +49,53 @@ export default function DragDropZone({ onFileSelect }) {
         fileInputRef.current?.click()
     }
 
-    const handleRemoveFile = () => {
-        setSelectedFile(null)
-        if (onFileSelect) {
-            onFileSelect(null)
-        }
-        if (fileInputRef.current) {
-            fileInputRef.current.value = ''
-        }
-    }
-
     return (
-        <div className="w-full max-w-2xl mx-auto">
-            {!selectedFile ? (
-                <div
-                    onDragEnter={handleDragEnter}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                    onClick={handleClick}
-                    className={`
-            relative border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer
-            transition-all duration-300 glass-card
-            ${isDragging
-                            ? 'border-primary-500 bg-primary-500/10 scale-105'
-                            : 'border-gray-300 dark:border-gray-600 hover:border-primary-500 hover:bg-gray-100/50 dark:hover:bg-gray-800/50'
-                        }
-          `}
-                >
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        onChange={handleFileInput}
-                        className="hidden"
-                        accept="*"
-                    />
+        <div
+            onDragEnter={handleDragEnter}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={handleClick}
+            className={`
+                upload-zone min-h-[220px] group cursor-pointer relative
+                ${isDragging ? 'border-primary bg-surface-variant' : ''}
+            `}
+        >
+            {/* Hover overlay */}
+            <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl" />
 
-                    <div className="flex flex-col items-center gap-4">
-                        <div className={`
-              p-6 rounded-full glass-card transition-transform duration-300
-              ${isDragging ? 'scale-110' : ''}
+            <input
+                ref={fileInputRef}
+                type="file"
+                onChange={handleFileInput}
+                className="hidden"
+                accept="*"
+            />
+
+            <span className={`
+                material-symbols-outlined text-4xl mb-3 transition-colors
+                ${isDragging ? 'text-primary icon-filled' : 'text-outline group-hover:text-primary'}
             `}>
-                            {isDragging ? (
-                                <File className="w-12 h-12 text-primary-600 dark:text-primary-400" />
-                            ) : (
-                                <Upload className="w-12 h-12 text-primary-600 dark:text-primary-400" />
-                            )}
-                        </div>
+                cloud_upload
+            </span>
 
-                        <div>
-                            <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                                {isDragging ? 'Drop your file here' : 'Upload a file'}
-                            </h3>
-                            <p className="text-gray-600 dark:text-gray-400">
-                                Drag and drop or click to browse
-                            </p>
-                            <p className="text-gray-500 dark:text-gray-500 text-sm mt-2">
-                                Maximum file size: 5GB
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            ) : (
-                <FilePreview file={selectedFile} onRemove={handleRemoveFile} />
-            )}
+            <p className="text-white text-base font-medium z-10">
+                {isDragging ? 'Drop your file here' : 'Drag & Drop files'}
+            </p>
+            <p className="text-on-surface-variant text-xs mt-1 z-10">
+                or browse your device (Max 5GB)
+            </p>
+
+            <button
+                type="button"
+                onClick={(e) => {
+                    e.stopPropagation()
+                    handleClick()
+                }}
+                className="mt-4 px-6 py-2.5 rounded-full bg-surface-variant text-primary border border-primary/30 text-sm font-medium shadow-sm hover:shadow-md hover:bg-primary/10 transition-all z-10"
+            >
+                Choose File
+            </button>
         </div>
     )
 }

@@ -10,8 +10,8 @@ export default function QRCode({ url }) {
                 width: 256,
                 margin: 2,
                 color: {
-                    dark: '#1e40af', // primary-700
-                    light: '#ffffff'
+                    dark: '#BB86FC', // primary purple
+                    light: '#000000' // black background
                 }
             }).then(setQrDataUrl)
         }
@@ -21,14 +21,14 @@ export default function QRCode({ url }) {
 
     return (
         <div className="flex flex-col items-center gap-3">
-            <div className="bg-white p-4 rounded-lg shadow-lg">
+            <div className="bg-black p-4 rounded-xl border border-outline-variant shadow-purple-glow">
                 <img
                     src={qrDataUrl}
                     alt="QR Code"
-                    className="w-64 h-64"
+                    className="w-48 h-48 sm:w-64 sm:h-64"
                 />
             </div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
+            <p className="text-sm text-on-surface-variant">
                 Scan to download on mobile
             </p>
         </div>

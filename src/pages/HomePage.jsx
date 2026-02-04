@@ -4,7 +4,6 @@ import UploadProgress from '../components/FileUpload/UploadProgress'
 import ExpirySelector, { EXPIRY_OPTIONS } from '../components/FileUpload/ExpirySelector'
 import FilePreviewModal from '../components/FileUpload/FilePreviewModal'
 import QRCode from '../components/SharePage/QRCode'
-import { Shield, Lock, Zap, Globe, Check, Copy, Eye, QrCode as QrCodeIcon } from 'lucide-react'
 import { encryptFileStreaming, terminateWorkerPool } from '../utils/streamingEncryption'
 import { uploadToR2 } from '../utils/r2Upload'
 import { formatFileSize } from '../utils/fileUtils'
@@ -19,7 +18,7 @@ export default function HomePage() {
     const [copied, setCopied] = useState(false)
     const [showPreview, setShowPreview] = useState(false)
     const [showQR, setShowQR] = useState(false)
-    const [selectedExpiry, setSelectedExpiry] = useState(EXPIRY_OPTIONS[2]) // Default 24 hours
+    const [selectedExpiry, setSelectedExpiry] = useState(EXPIRY_OPTIONS[2])
 
     const handleFileSelect = (file) => {
         setSelectedFile(file)
@@ -37,19 +36,17 @@ export default function HomePage() {
 
             const fileId = crypto.randomUUID()
 
-            // Phase 1: Streaming encryption (0-50%)
             setUploadStatus('Encrypting file in your browser...')
             setUploadStage('encrypting')
 
             const encryptionResult = await encryptFileStreaming(
                 selectedFile,
                 (progress, stage, completed, total) => {
-                    setUploadProgress(progress * 0.5) // 0-50%
+                    setUploadProgress(progress * 0.5)
                     setUploadStatus(`Encrypting: chunk ${completed}/${total}`)
                 }
             )
 
-            // Phase 2: Upload to R2 (50-95%)
             setUploadStatus('Uploading encrypted file...')
             setUploadStage('uploading')
 
@@ -58,7 +55,7 @@ export default function HomePage() {
                 encryptionResult.authTags,
                 fileId,
                 (progress, stage) => {
-                    setUploadProgress(50 + progress * 0.45) // 50-95%
+                    setUploadProgress(50 + progress * 0.45)
                     if (stage === 'initiating') {
                         setUploadStatus('Starting upload...')
                     } else if (stage === 'uploading') {
@@ -69,7 +66,6 @@ export default function HomePage() {
                 }
             )
 
-            // Phase 3: Save metadata (95-100%)
             setUploadStatus('Saving metadata...')
             setUploadProgress(95)
 
@@ -96,11 +92,9 @@ export default function HomePage() {
                 })
             })
 
-
             setUploadStatus('Complete!')
             setUploadProgress(100)
 
-            // Generate share URL with keys in fragment (zero-knowledge!)
             const baseUrl = window.location.origin
             const url = `${baseUrl}/share/${fileId}#key=${encryptionResult.keyHex}&iv=${encryptionResult.ivHex}`
             setShareUrl(url)
@@ -123,168 +117,176 @@ export default function HomePage() {
     }
 
     return (
-        <div className="container mx-auto px-6 py-12">
-            {/* Hero Section */}
-            <div className="text-center mb-12">
-                <h1 className="text-5xl md:text-6xl font-bold text-gray-900 dark:text-white mb-4">
-                    Share Files Securely
-                    <br />
-                    <span className="text-primary-600 dark:text-primary-400">Zero-Knowledge Encryption</span>
-                </h1>
-                <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-                    Upload files up to 5GB with end-to-end encryption. Your files, your keys, your privacy.
-                </p>
-            </div>
+        <div className="min-h-screen bg-surface relative overflow-hidden">
+            {/* Ambient background glow */}
+            <div className="ambient-glow" />
 
-            {/* File Upload */}
-            <div className="mb-16 max-w-2xl mx-auto">
-                {!uploading && !shareUrl && (
-                    <>
-                        <DragDropZone onFileSelect={handleFileSelect} />
+            {/* Header */}
+            <header className="relative z-20 flex items-center gap-3 px-4 py-4 md:px-6">
+                <span className="material-symbols-outlined text-primary text-3xl icon-filled">shield_lock</span>
+                <span className="text-xl font-normal tracking-tight text-white">MaskedFile</span>
+            </header>
 
-                        {selectedFile && (
-                            <>
-                                <div className="mt-6">
-                                    <ExpirySelector
-                                        selected={selectedExpiry}
-                                        onChange={setSelectedExpiry}
-                                    />
+            {/* Main Content */}
+            <main className="relative z-10 flex flex-col items-center justify-center px-4 py-8 md:py-12">
+                {/* Hero Text */}
+                <div className="text-center mb-6 md:mb-8">
+                    <h1 className="text-2xl sm:text-3xl font-normal text-white mb-1">Masked Transfer</h1>
+                    <p className="text-on-surface-variant text-sm">Server-side encrypted. Zero-knowledge.</p>
+                </div>
+
+                {/* Main Card */}
+                <div className="w-full max-w-[900px]">
+                    {!uploading && !shareUrl && (
+                        <div className="glass-card p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 lg:gap-12 items-start card-hover">
+                            {/* Left: Upload Zone */}
+                            <div className="flex flex-col gap-4">
+                                <DragDropZone onFileSelect={handleFileSelect} selectedFile={selectedFile} />
+
+                                {/* Selected File Preview */}
+                                {selectedFile && (
+                                    <div className="bg-surface-container-high rounded-xl p-3 flex items-center gap-3 border border-outline-variant">
+                                        <div className="w-10 h-10 rounded-full bg-primary-container text-primary-200 flex items-center justify-center shrink-0">
+                                            <span className="material-symbols-outlined text-xl icon-filled">description</span>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <span className="text-sm font-medium text-white truncate block">{selectedFile.name}</span>
+                                            <span className="text-xs text-on-surface-variant">{formatFileSize(selectedFile.size)}</span>
+                                        </div>
+                                        <button
+                                            onClick={() => setSelectedFile(null)}
+                                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 text-on-surface-variant shrink-0"
+                                        >
+                                            <span className="material-symbols-outlined text-xl">close</span>
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Right: Security Options */}
+                            <div className="flex flex-col gap-6 h-full justify-between">
+                                <div className="space-y-6">
+                                    {/* Section Header */}
+                                    <div className="flex items-center gap-2 text-white pb-2 border-b border-outline-variant">
+                                        <span className="material-symbols-outlined text-primary">tune</span>
+                                        <h3 className="text-base font-medium">Security Options</h3>
+                                    </div>
+
+                                    {/* Expiry Selector */}
+                                    <ExpirySelector selected={selectedExpiry} onChange={setSelectedExpiry} />
+
+                                    {/* Preview Button */}
+                                    {selectedFile && (
+                                        <button
+                                            onClick={() => setShowPreview(true)}
+                                            className="w-full h-10 rounded-full border border-outline text-on-surface-variant text-sm font-medium hover:bg-white/5 transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            <span className="material-symbols-outlined text-lg">visibility</span>
+                                            Preview File
+                                        </button>
+                                    )}
                                 </div>
 
-                                <div className="mt-6 flex gap-3 justify-center">
-                                    <button
-                                        onClick={() => setShowPreview(true)}
-                                        className="px-6 py-3 rounded-lg font-medium bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors flex items-center gap-2"
-                                    >
-                                        <Eye className="w-5 h-5" />
-                                        Preview File
-                                    </button>
-
+                                {/* Upload Button */}
+                                <div className="pt-4 space-y-4">
                                     <button
                                         onClick={handleUpload}
-                                        className="btn-primary flex items-center gap-2"
+                                        disabled={!selectedFile}
+                                        className={`w-full h-12 rounded-full font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${selectedFile
+                                            ? 'bg-primary text-black hover:shadow-purple-glow-button hover:bg-primary-400'
+                                            : 'bg-surface-variant text-on-surface-variant cursor-not-allowed'
+                                            }`}
                                     >
-                                        <Shield className="w-5 h-5" />
-                                        Encrypt & Upload
+                                        <span className="material-symbols-outlined icon-filled">rocket_launch</span>
+                                        Secure & Send
                                     </button>
+                                    <div className="flex items-center justify-center gap-1.5 text-primary text-[11px] font-medium opacity-80">
+                                        <span className="material-symbols-outlined text-[14px] icon-filled">lock</span>
+                                        <span>Files encrypted before leaving device</span>
+                                    </div>
                                 </div>
-                            </>
-                        )}
-                    </>
-                )}
-
-                {uploading && (
-                    <UploadProgress
-                        progress={uploadProgress}
-                        fileName={selectedFile?.name}
-                        status={uploadStatus}
-                        encryptionNote={uploadStage === 'encrypting'}
-                    />
-                )}
-
-                {shareUrl && (
-                    <div className="glass-card p-8 rounded-2xl text-center">
-                        <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <Check className="w-8 h-8 text-green-600 dark:text-green-400" />
-                        </div>
-
-                        <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                            File Uploaded Successfully!
-                        </h3>
-                        <p className="text-gray-600 dark:text-gray-400 mb-6">
-                            Share this link to let others download your file
-                        </p>
-
-                        <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4 mb-4 break-all text-sm font-mono text-gray-900 dark:text-white">
-                            {shareUrl}
-                        </div>
-
-                        <div className="flex gap-3 justify-center mb-6">
-                            <button
-                                onClick={handleCopy}
-                                className="btn-primary flex items-center gap-2"
-                            >
-                                {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
-                                {copied ? 'Copied!' : 'Copy Link'}
-                            </button>
-
-                            <button
-                                onClick={() => setShowQR(!showQR)}
-                                className="px-6 py-3 rounded-lg font-medium bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors flex items-center gap-2"
-                            >
-                                <QrCodeIcon className="w-5 h-5" />
-                                {showQR ? 'Hide QR' : 'Show QR Code'}
-                            </button>
-
-                            <button
-                                onClick={() => {
-                                    setShareUrl(null)
-                                    setSelectedFile(null)
-                                    setShowQR(false)
-                                }}
-                                className="px-6 py-3 rounded-lg font-medium bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                            >
-                                Upload Another
-                            </button>
-                        </div>
-
-                        {showQR && (
-                            <div className="mt-6">
-                                <QRCode url={shareUrl} />
                             </div>
-                        )}
-
-                        <div className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-                            <Shield className="w-4 h-4 inline mr-1" />
-                            Zero-Knowledge: Encryption keys are only in the URL
                         </div>
-                    </div>
-                )}
-            </div>
+                    )}
 
-            {/* Features Grid */}
-            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
-                <FeatureCard
-                    icon={<Shield className="w-8 h-8" />}
-                    title="Zero-Knowledge"
-                    description="Files encrypted in your browser. We never see your data."
-                />
-                <FeatureCard
-                    icon={<Lock className="w-8 h-8" />}
-                    title="AES-256 Encryption"
-                    description="Military-grade encryption for maximum security."
-                />
-                <FeatureCard
-                    icon={<Zap className="w-8 h-8" />}
-                    title="Up to 5GB"
-                    description="Share large files with intelligent routing."
-                />
-                <FeatureCard
-                    icon={<Globe className="w-8 h-8" />}
-                    title="Auto-Delete"
-                    description="Files expire automatically for privacy."
-                />
-            </div>
+                    {/* Uploading State */}
+                    {uploading && (
+                        <div className="glass-card p-6 md:p-8">
+                            <UploadProgress
+                                progress={uploadProgress}
+                                fileName={selectedFile?.name}
+                                status={uploadStatus}
+                                encryptionNote={uploadStage === 'encrypting'}
+                            />
+                        </div>
+                    )}
+
+                    {/* Success State */}
+                    {shareUrl && (
+                        <div className="glass-card p-6 md:p-8 text-center card-hover">
+                            <div className="w-16 h-16 bg-primary-container rounded-full flex items-center justify-center mx-auto mb-4">
+                                <span className="material-symbols-outlined text-3xl text-primary icon-filled">check_circle</span>
+                            </div>
+
+                            <h3 className="text-xl font-medium text-white mb-2">File Uploaded Successfully!</h3>
+                            <p className="text-on-surface-variant text-sm mb-6">Share this link to let others download your file</p>
+
+                            <div className="bg-surface-container-high rounded-lg p-4 mb-6 break-all text-sm font-mono text-on-surface-variant border border-outline-variant">
+                                {shareUrl}
+                            </div>
+
+                            <div className="flex flex-col sm:flex-row gap-3 justify-center mb-6">
+                                <button onClick={handleCopy} className="btn-primary flex items-center justify-center gap-2">
+                                    <span className="material-symbols-outlined text-lg">{copied ? 'check' : 'content_copy'}</span>
+                                    {copied ? 'Copied!' : 'Copy Link'}
+                                </button>
+
+                                <button
+                                    onClick={() => setShowQR(!showQR)}
+                                    className="btn-secondary flex items-center justify-center gap-2"
+                                >
+                                    <span className="material-symbols-outlined text-lg">qr_code_2</span>
+                                    {showQR ? 'Hide QR' : 'Show QR'}
+                                </button>
+
+                                <button
+                                    onClick={() => {
+                                        setShareUrl(null)
+                                        setSelectedFile(null)
+                                        setShowQR(false)
+                                    }}
+                                    className="btn-secondary"
+                                >
+                                    Upload Another
+                                </button>
+                            </div>
+
+                            {showQR && (
+                                <div className="mt-6">
+                                    <QRCode url={shareUrl} />
+                                </div>
+                            )}
+
+                            <div className="mt-4 text-[11px] text-on-surface-variant flex items-center justify-center gap-1">
+                                <span className="material-symbols-outlined text-[14px] icon-filled">verified_user</span>
+                                Zero-Knowledge: Encryption keys are only in the URL
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer Links */}
+                <div className="mt-8 flex gap-2 text-xs text-on-surface-variant font-medium items-center">
+                    <span>Made with</span>
+                    <span className="text-red-500 text-sm">❤️</span>
+                    <span>by Basit</span>
+                </div>
+            </main>
 
             {/* File Preview Modal */}
             {showPreview && (
-                <FilePreviewModal
-                    file={selectedFile}
-                    onClose={() => setShowPreview(false)}
-                />
+                <FilePreviewModal file={selectedFile} onClose={() => setShowPreview(false)} />
             )}
-        </div>
-    )
-}
-
-function FeatureCard({ icon, title, description }) {
-    return (
-        <div className="glass-card p-6 rounded-xl glass-hover group">
-            <div className="text-primary-600 dark:text-primary-400 mb-3 group-hover:scale-110 transition-transform">
-                {icon}
-            </div>
-            <h3 className="text-gray-900 dark:text-white font-semibold text-lg mb-2">{title}</h3>
-            <p className="text-gray-600 dark:text-gray-400 text-sm">{description}</p>
         </div>
     )
 }

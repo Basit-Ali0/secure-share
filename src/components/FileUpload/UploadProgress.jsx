@@ -1,39 +1,44 @@
 export default function UploadProgress({ progress, fileName, status, encryptionNote }) {
     return (
-        <div className="glass-card p-6 rounded-2xl">
-            <div className="mb-4">
-                <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        {status}
-                    </span>
-                    <span className="text-sm font-medium text-primary-600 dark:text-primary-400">
-                        {progress}%
-                    </span>
+        <div className="flex flex-col gap-6">
+            {/* File being uploaded */}
+            <div className="bg-surface-container-high rounded-xl p-4 flex items-center gap-3 border border-outline-variant">
+                <div className="w-10 h-10 rounded-full bg-primary-container text-primary-200 flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-xl icon-filled">description</span>
                 </div>
-
-                {/* Progress Bar */}
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
-                    <div
-                        className="bg-primary-600 h-2.5 rounded-full transition-all duration-300"
-                        style={{ width: `${progress}%` }}
-                    />
+                <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-medium text-white truncate">{fileName}</span>
+                        <span className="text-xs font-medium text-primary">{Math.round(progress)}%</span>
+                    </div>
+                    {/* Progress Bar */}
+                    <div className="h-1 w-full bg-surface-variant rounded-full overflow-hidden">
+                        <div
+                            className="progress-bar transition-all duration-300"
+                            style={{ width: `${progress}%` }}
+                        />
+                    </div>
                 </div>
             </div>
 
-            <p className="text-sm text-gray-600 dark:text-gray-400 truncate mb-3">
-                {fileName}
-            </p>
+            {/* Status */}
+            <div className="text-center">
+                <p className="text-on-surface-variant text-sm">{status}</p>
+            </div>
 
             {/* Encryption Info */}
             {encryptionNote && (
-                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-                    <div className="flex items-start gap-2">
-                        <svg className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <p className="text-xs text-blue-800 dark:text-blue-300">
-                            <strong>Processing may take time:</strong> Your file is being encrypted in your browser for maximum security. The server will never see your unencrypted data.
-                        </p>
+                <div className="bg-primary-container/30 border border-primary/20 rounded-xl p-4">
+                    <div className="flex items-start gap-3">
+                        <span className="material-symbols-outlined text-primary text-lg shrink-0">lock</span>
+                        <div>
+                            <p className="text-sm text-primary-200 font-medium mb-1">
+                                Encrypting in your browser
+                            </p>
+                            <p className="text-xs text-on-surface-variant">
+                                Your file is being encrypted locally for maximum security. The server will never see your unencrypted data.
+                            </p>
+                        </div>
                     </div>
                 </div>
             )}

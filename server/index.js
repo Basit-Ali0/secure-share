@@ -8,6 +8,7 @@ import cors from 'cors'
 import { createClient } from '@supabase/supabase-js'
 import dotenv from 'dotenv'
 import {
+    getPresignedUploadUrl,
     initiateMultipartUpload,
     getPresignedPartUrl,
     completeMultipartUpload,
@@ -30,11 +31,35 @@ const supabase = createClient(
 )
 
 // ============================================
-// R2 Multipart Upload Endpoints
+// R2 Upload Endpoints
 // ============================================
 
 /**
- * Initiate multipart upload
+ * Get presigned URL for simple upload (small files < 5MB)
+ * POST /api/r2/simple-upload
+ */
+app.post('/api/r2/simple-upload', async (req, res) => {
+    try {
+        const { fileId } = req.body
+
+        if (!fileId) {
+            return res.status(400).json({ message: 'fileId required' })
+        }
+
+        console.log(`[R2] Simple upload URL for ${fileId}`)
+
+        const result = await getPresignedUploadUrl(fileId)
+
+        res.json(result)
+
+    } catch (error) {
+        console.error('[R2 Simple Upload] Error:', error)
+        res.status(500).json({ message: error.message })
+    }
+})
+
+/**
+ * Initiate multipart upload (for files >= 5MB)
  * POST /api/r2/initiate
  */
 app.post('/api/r2/initiate', async (req, res) => {
@@ -56,6 +81,7 @@ app.post('/api/r2/initiate', async (req, res) => {
         res.status(500).json({ message: error.message })
     }
 })
+
 
 /**
  * Get presigned URL for part upload
@@ -143,6 +169,7 @@ app.post('/api/files/metadata', async (req, res) => {
             storagePath,
             storageBackend,
             chunkCount,
+            chunkSizes,
             expiresAt
         } = req.body
 
@@ -154,6 +181,7 @@ app.post('/api/files/metadata', async (req, res) => {
             storage_path: storagePath,
             storage_backend: storageBackend || 'r2',
             chunk_count: chunkCount || 1,
+            chunk_sizes: chunkSizes || null,
             expires_at: expiresAt
         })
 
@@ -168,6 +196,7 @@ app.post('/api/files/metadata', async (req, res) => {
         res.status(500).json({ message: error.message })
     }
 })
+
 
 /**
  * Get file metadata
@@ -213,9 +242,17 @@ app.get('/api/files/:fileId', async (req, res) => {
 /**
  * Clean up expired files
  * GET /api/cleanup-expired
+ * Requires x-cleanup-secret header for authentication
  */
 app.get('/api/cleanup-expired', async (req, res) => {
     try {
+        // Verify cleanup secret (skip check if not configured - for local dev)
+        const cleanupSecret = process.env.CLEANUP_SECRET
+        if (cleanupSecret && req.headers['x-cleanup-secret'] !== cleanupSecret) {
+            console.log('[Cleanup] Unauthorized attempt')
+            return res.status(401).json({ message: 'Unauthorized' })
+        }
+
         console.log('[Cleanup] Starting automatic cleanup...')
 
         const { data: expiredFiles, error: fetchError } = await supabase
@@ -231,6 +268,7 @@ app.get('/api/cleanup-expired', async (req, res) => {
             console.log('[Cleanup] No expired files found')
             return res.json({ deleted: 0, message: 'No expired files' })
         }
+
 
         let deletedCount = 0
         const errors = []

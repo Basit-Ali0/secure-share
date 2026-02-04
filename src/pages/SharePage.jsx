@@ -64,10 +64,12 @@ export default function SharePage() {
             const { encryptedChunks, authTags } = await downloadFromR2(
                 metadata.storage_path,
                 metadata.chunk_count || 1,
+                metadata.chunk_sizes || null,
                 (progress) => {
                     setDownloadProgress(progress * 0.4)
                 }
             )
+
 
             // Phase 2: Decrypt chunks in browser (40-90%)
             setDownloadStatus('Decrypting in your browser...')

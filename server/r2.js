@@ -4,9 +4,21 @@
 
 import {
     S3Client, CreateMultipartUploadCommand, UploadPartCommand,
-    CompleteMultipartUploadCommand, GetObjectCommand, DeleteObjectCommand
+    CompleteMultipartUploadCommand, GetObjectCommand, DeleteObjectCommand,
+    PutObjectCommand
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import dotenv from 'dotenv'
+
+// Load environment variables
+dotenv.config()
+
+// Log R2 config (without secrets)
+console.log('[R2] Initializing with:')
+console.log(`  Account ID: ${process.env.R2_ACCOUNT_ID ? '✓ Set' : '✗ Missing'}`)
+console.log(`  Access Key: ${process.env.R2_ACCESS_KEY_ID ? '✓ Set' : '✗ Missing'}`)
+console.log(`  Secret Key: ${process.env.R2_SECRET_ACCESS_KEY ? '✓ Set' : '✗ Missing'}`)
+console.log(`  Bucket: ${process.env.R2_BUCKET_NAME || 'Not set, using default'}`)
 
 // R2 Client configuration
 const r2Client = new S3Client({
@@ -19,6 +31,23 @@ const r2Client = new S3Client({
 })
 
 const BUCKET_NAME = process.env.R2_BUCKET_NAME || 'secure-share-files'
+
+/**
+ * Get presigned URL for simple single-file upload (for files < 5MB)
+ */
+export async function getPresignedUploadUrl(fileId) {
+    const objectKey = `files/${fileId}.enc`
+
+    const command = new PutObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: objectKey,
+        ContentType: 'application/octet-stream'
+    })
+
+    const presignedUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 })
+
+    return { presignedUrl, objectKey }
+}
 
 /**
  * Initiate multipart upload
@@ -39,6 +68,7 @@ export async function initiateMultipartUpload(fileId) {
         objectKey
     }
 }
+
 
 /**
  * Generate presigned URL for part upload

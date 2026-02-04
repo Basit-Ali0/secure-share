@@ -91,9 +91,11 @@ export default function HomePage() {
                     storagePath: uploadResult.objectKey,
                     storageBackend: 'r2',
                     chunkCount: uploadResult.totalChunks,
+                    chunkSizes: uploadResult.chunkSizes || null,
                     expiresAt: expiresAt.toISOString()
                 })
             })
+
 
             setUploadStatus('Complete!')
             setUploadProgress(100)

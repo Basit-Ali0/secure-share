@@ -15,10 +15,38 @@ export default function SharePage() {
     const [downloadProgress, setDownloadProgress] = useState(0)
     const [downloadStatus, setDownloadStatus] = useState('')
     const [showQR, setShowQR] = useState(false)
+    const [timeLeft, setTimeLeft] = useState(null)
 
     useEffect(() => {
         loadFileMetadata()
     }, [fileId])
+
+    // Live expiry countdown
+    useEffect(() => {
+        if (!metadata?.expires_at) return
+
+        function updateCountdown() {
+            const diff = new Date(metadata.expires_at) - new Date()
+            setTimeLeft(diff > 0 ? diff : 0)
+        }
+
+        updateCountdown()
+        const interval = setInterval(updateCountdown, 60000)
+        return () => clearInterval(interval)
+    }, [metadata?.expires_at])
+
+    function formatTimeLeft(ms) {
+        if (ms <= 0) return 'Expired'
+        const hours = Math.floor(ms / 3600000)
+        const minutes = Math.floor((ms % 3600000) / 60000)
+        if (hours >= 24) {
+            const days = Math.floor(hours / 24)
+            const remainingHours = hours % 24
+            return `${days}d ${remainingHours}h`
+        }
+        if (hours > 0) return `${hours}h ${minutes}m`
+        return `${minutes}m`
+    }
 
     async function loadFileMetadata() {
         try {
@@ -161,6 +189,28 @@ export default function SharePage() {
                                 {fileExt}
                             </span>
                         </div>
+                    </div>
+
+                    {/* Stats: Download Count + Expiry */}
+                    <div className="w-full flex items-center justify-center gap-3 text-[12px] text-on-surface-variant">
+                        <div className="flex items-center gap-1.5 bg-surface-variant/30 border border-outline-variant/50 px-3 py-1.5 rounded-lg">
+                            <span className="material-symbols-outlined text-[14px] text-primary">download</span>
+                            <span className="text-gray-300">{metadata.download_count || 0} downloads</span>
+                        </div>
+                        {timeLeft !== null && (
+                            <div className={`flex items-center gap-1.5 border px-3 py-1.5 rounded-lg ${timeLeft <= 0
+                                    ? 'bg-red-900/20 border-red-500/30'
+                                    : timeLeft < 3600000
+                                        ? 'bg-amber-900/20 border-amber-500/30'
+                                        : 'bg-surface-variant/30 border-outline-variant/50'
+                                }`}>
+                                <span className={`material-symbols-outlined text-[14px] ${timeLeft <= 0 ? 'text-red-400' : timeLeft < 3600000 ? 'text-amber-400' : 'text-primary'
+                                    }`}>schedule</span>
+                                <span className={timeLeft <= 0 ? 'text-red-400' : timeLeft < 3600000 ? 'text-amber-400' : 'text-gray-300'}>
+                                    {formatTimeLeft(timeLeft)}
+                                </span>
+                            </div>
+                        )}
                     </div>
 
                     {/* Divider */}

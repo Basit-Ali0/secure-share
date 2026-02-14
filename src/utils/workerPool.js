@@ -30,6 +30,7 @@ export class WorkerPool {
             worker.onmessage = (e) => this.handleWorkerMessage(i, e)
             worker.onerror = (e) => this.handleWorkerError(i, e)
             worker.busy = false
+            worker.currentRequestId = null
 
             this.workers.push(worker)
         }
@@ -47,6 +48,7 @@ export class WorkerPool {
         if (!job) return
 
         this.workers[workerIndex].busy = false
+        this.workers[workerIndex].currentRequestId = null
         this.activeJobs.delete(requestId)
 
         if (type === 'ERROR') {
@@ -60,18 +62,21 @@ export class WorkerPool {
     }
 
     /**
-     * Handle worker error
+     * Handle worker error — uses tracked requestId to reject the correct job
      */
     handleWorkerError(workerIndex, error) {
         console.error(`Worker ${workerIndex} error:`, error)
-        this.workers[workerIndex].busy = false
+        const worker = this.workers[workerIndex]
+        worker.busy = false
 
-        // Find and reject any active job assigned to this worker
-        for (const [requestId, job] of this.activeJobs) {
-            // Reject the oldest active job (most likely the one that failed)
+        // Use tracked requestId to reject the correct job
+        const requestId = worker.currentRequestId
+        worker.currentRequestId = null
+
+        if (requestId != null && this.activeJobs.has(requestId)) {
+            const job = this.activeJobs.get(requestId)
             this.activeJobs.delete(requestId)
             job.reject(new Error(`Worker ${workerIndex} error: ${error.message || 'Unknown error'}`))
-            break
         }
 
         this.processQueue()
@@ -89,7 +94,7 @@ export class WorkerPool {
     }
 
     /**
-     * Process queued jobs
+     * Process queued jobs — assigns work to available workers
      */
     processQueue() {
         if (this.queue.length === 0) return
@@ -100,6 +105,7 @@ export class WorkerPool {
 
         const job = this.queue.shift()
         availableWorker.busy = true
+        availableWorker.currentRequestId = job.requestId
         this.activeJobs.set(job.requestId, job)
 
         availableWorker.postMessage({
@@ -133,7 +139,10 @@ export class WorkerPool {
      * Terminate all workers
      */
     terminate() {
-        this.workers.forEach(w => w.terminate())
+        this.workers.forEach(w => {
+            w.currentRequestId = null
+            w.terminate()
+        })
         this.workers = []
 
         // Reject all queued jobs

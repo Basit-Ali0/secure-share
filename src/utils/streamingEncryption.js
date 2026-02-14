@@ -197,8 +197,13 @@ export async function downloadAndDecryptStreaming(
     }
     const { presignedUrl } = await urlResponse.json()
 
+    // Multi-chunk file missing chunkSizes — cannot proceed
+    if (totalChunks > 1 && !chunkSizes) {
+        throw new Error('Missing chunkSizes metadata for multi-chunk file — cannot determine byte ranges for download')
+    }
+
     // --- Single chunk / small file: download all at once (fine for < ~100MB) ---
-    if (totalChunks === 1 || !chunkSizes) {
+    if (totalChunks === 1) {
         onProgress(5, 'Downloading...')
 
         const downloadResponse = await fetch(presignedUrl)

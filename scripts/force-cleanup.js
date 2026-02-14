@@ -42,21 +42,33 @@ async function forceCleanup() {
         }
     }
 
-    // 2. Delete all R2 objects
+    // 2. Delete all R2 objects (paginated — handles >1000 objects)
     console.log('\n📦 Cleaning R2 bucket...')
     try {
-        const listCmd = new ListObjectsV2Command({ Bucket: BUCKET, Prefix: 'files/' })
-        const listed = await r2Client.send(listCmd)
+        let continuationToken = undefined
+        let totalDeleted = 0
 
-        if (listed.Contents && listed.Contents.length > 0) {
-            console.log(`  Found ${listed.Contents.length} objects in R2`)
-            for (const obj of listed.Contents) {
-                await r2Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: obj.Key }))
-                console.log(`  🗑️  Deleted: ${obj.Key}`)
+        do {
+            const listCmd = new ListObjectsV2Command({
+                Bucket: BUCKET,
+                Prefix: 'files/',
+                ContinuationToken: continuationToken
+            })
+            const listed = await r2Client.send(listCmd)
+
+            if (listed.Contents && listed.Contents.length > 0) {
+                console.log(`  Found ${listed.Contents.length} objects in page`)
+                for (const obj of listed.Contents) {
+                    await r2Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: obj.Key }))
+                    console.log(`  🗑️  Deleted: ${obj.Key}`)
+                    totalDeleted++
+                }
             }
-        } else {
-            console.log('  No objects in R2')
-        }
+
+            continuationToken = listed.NextContinuationToken
+        } while (continuationToken)
+
+        console.log(`  Total deleted: ${totalDeleted} objects`)
     } catch (e) {
         console.error('  ❌ R2 cleanup error:', e.message)
     }

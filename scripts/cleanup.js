@@ -15,13 +15,12 @@ if (!process.env.VITE_SUPABASE_URL) {
     process.exit(1)
 }
 
-const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
-if (!supabaseKey) {
-    console.error('❌ Missing Supabase key: set SUPABASE_SERVICE_KEY or VITE_SUPABASE_ANON_KEY')
+if (!process.env.SUPABASE_SERVICE_KEY) {
+    console.error('❌ Missing SUPABASE_SERVICE_KEY — required for cleanup (anon key blocked by RLS)')
     process.exit(1)
 }
 
-const supabase = createClient(process.env.VITE_SUPABASE_URL, supabaseKey)
+const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
 
 // R2 client (for deleting stored files)
 let r2Client = null

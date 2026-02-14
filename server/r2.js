@@ -36,6 +36,27 @@ const BUCKET_NAME = process.env.R2_BUCKET_NAME || 'secure-share-files'
 // UUID v4 format regex for fileId validation
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+// Object key must be files/{uuid}.enc — no path traversal
+const OBJECT_KEY_REGEX = /^files\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.enc$/i
+
+// Upload IDs: alphanumeric, dashes, underscores, dots (S3/R2 format)
+const UPLOAD_ID_REGEX = /^[a-zA-Z0-9._-]+$/
+
+/**
+ * Validate objectKey matches safe pattern (files/{uuid}.enc)
+ */
+function validateObjectKey(objectKey) {
+    if (!objectKey || typeof objectKey !== 'string') {
+        throw new Error('objectKey is required')
+    }
+    if (objectKey.includes('..') || objectKey.includes('\0') || objectKey.startsWith('/')) {
+        throw new Error('Invalid objectKey: path traversal detected')
+    }
+    if (!OBJECT_KEY_REGEX.test(objectKey)) {
+        throw new Error('Invalid objectKey: must match files/{uuid}.enc')
+    }
+}
+
 /**
  * Get presigned URL for simple single-file upload (for files < 5MB)
  */
@@ -84,6 +105,15 @@ export async function initiateMultipartUpload(fileId) {
  * Generate presigned URL for part upload
  */
 export async function getPresignedPartUrl(objectKey, uploadId, partNumber) {
+    validateObjectKey(objectKey)
+
+    if (!Number.isInteger(partNumber) || partNumber < 1) {
+        throw new Error('Invalid partNumber: must be integer > 0')
+    }
+    if (!uploadId || typeof uploadId !== 'string' || !UPLOAD_ID_REGEX.test(uploadId)) {
+        throw new Error('Invalid uploadId: must be non-empty alphanumeric token')
+    }
+
     const command = new UploadPartCommand({
         Bucket: BUCKET_NAME,
         Key: objectKey,
@@ -136,6 +166,8 @@ export async function completeMultipartUpload(objectKey, uploadId, parts) {
  * Generate presigned URL for download
  */
 export async function getPresignedDownloadUrl(objectKey) {
+    validateObjectKey(objectKey)
+
     const command = new GetObjectCommand({
         Bucket: BUCKET_NAME,
         Key: objectKey
@@ -150,6 +182,8 @@ export async function getPresignedDownloadUrl(objectKey) {
  * Delete object from R2
  */
 export async function deleteObject(objectKey) {
+    validateObjectKey(objectKey)
+
     const command = new DeleteObjectCommand({
         Bucket: BUCKET_NAME,
         Key: objectKey

@@ -5,6 +5,7 @@
 
 import express from 'express'
 import cors from 'cors'
+import crypto from 'crypto'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { createClient } from '@supabase/supabase-js'
@@ -149,6 +150,21 @@ app.get('/api/r2/download/*', async (req, res) => {
             return res.status(400).json({ message: 'objectKey required' })
         }
 
+        // P1: Enforce expiry check before signing download URL
+        const { data: file, error: dbError } = await supabase
+            .from('files')
+            .select('expires_at')
+            .eq('storage_path', objectKey)
+            .single()
+
+        if (dbError || !file) {
+            return res.status(404).json({ message: 'File not found' })
+        }
+
+        if (new Date(file.expires_at) < new Date()) {
+            return res.status(410).json({ message: 'File has expired' })
+        }
+
         const result = await getPresignedDownloadUrl(objectKey)
 
         res.json(result)
@@ -229,15 +245,30 @@ app.get('/api/files/:fileId', async (req, res) => {
             return res.status(410).json({ message: 'File has expired' })
         }
 
-        // Increment download count atomically via RPC to avoid race conditions
-        await supabase.rpc('increment_download_count', {
-            file_id_param: fileId
-        })
-
         res.json(metadata)
 
     } catch (error) {
         console.error('[Metadata Get] Error:', error)
+        res.status(500).json({ message: error.message })
+    }
+})
+
+/**
+ * Increment download count (call after successful download)
+ * POST /api/files/:fileId/downloaded
+ */
+app.post('/api/files/:fileId/downloaded', async (req, res) => {
+    try {
+        const { fileId } = req.params
+
+        await supabase.rpc('increment_download_count', {
+            file_id_param: fileId
+        })
+
+        res.json({ success: true })
+
+    } catch (error) {
+        console.error('[Download Count] Error:', error)
         res.status(500).json({ message: error.message })
     }
 })
@@ -248,18 +279,28 @@ app.get('/api/files/:fileId', async (req, res) => {
 
 /**
  * Clean up expired files
- * GET /api/cleanup-expired
- * Requires x-cleanup-secret header for authentication
+ * POST /api/cleanup-expired
+ * Requires x-cleanup-secret header for authentication (timing-safe)
  */
-app.get('/api/cleanup-expired', async (req, res) => {
+app.post('/api/cleanup-expired', async (req, res) => {
     try {
-        // Verify cleanup secret — always required
+        // Verify cleanup secret with timing-safe comparison
         const cleanupSecret = process.env.CLEANUP_SECRET
         if (!cleanupSecret) {
             console.error('[Cleanup] CLEANUP_SECRET not configured')
             return res.status(500).json({ message: 'Cleanup not configured' })
         }
-        if (req.headers['x-cleanup-secret'] !== cleanupSecret) {
+
+        const providedSecret = req.headers['x-cleanup-secret']
+        if (!providedSecret || typeof providedSecret !== 'string') {
+            console.log('[Cleanup] Unauthorized attempt — no secret provided')
+            return res.status(401).json({ message: 'Unauthorized' })
+        }
+
+        const secretBuf = Buffer.from(cleanupSecret, 'utf8')
+        const providedBuf = Buffer.from(providedSecret, 'utf8')
+
+        if (secretBuf.length !== providedBuf.length || !crypto.timingSafeEqual(secretBuf, providedBuf)) {
             console.log('[Cleanup] Unauthorized attempt')
             return res.status(401).json({ message: 'Unauthorized' })
         }

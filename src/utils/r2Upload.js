@@ -195,6 +195,9 @@ export async function uploadChunkToR2(objectKey, uploadId, partNumber, data) {
     }
 
     const etag = uploadResponse.headers.get('ETag')
+    if (!etag) {
+        throw new Error('Missing ETag from upload response — ensure R2 bucket CORS includes ExposeHeaders: ["ETag"]')
+    }
     return { etag }
 }
 

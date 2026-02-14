@@ -64,10 +64,14 @@ export default function SharePage() {
                 }
             )
 
+            // Increment download count on server (only on actual download)
+            fetch(`/api/files/${fileId}/downloaded`, { method: 'POST' }).catch(() => { })
+
             setTimeout(() => {
                 setDownloading(false)
                 setDownloadProgress(0)
-                loadFileMetadata()
+                // Optimistic: update state instead of re-fetching (avoids double-increment)
+                setMetadata(prev => prev ? { ...prev, download_count: (prev.download_count || 0) + 1 } : prev)
             }, 1500)
 
         } catch (err) {

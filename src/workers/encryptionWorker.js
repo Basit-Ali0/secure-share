@@ -11,13 +11,19 @@ self.onmessage = async function (e) {
         switch (type) {
             case 'ENCRYPT_CHUNK': {
                 const result = await encryptChunk(payload)
-                self.postMessage({ type: 'ENCRYPT_RESULT', payload: result, requestId })
+                self.postMessage(
+                    { type: 'ENCRYPT_RESULT', payload: result, requestId },
+                    [result.encryptedBuffer, result.authTag]
+                )
                 break
             }
 
             case 'DECRYPT_CHUNK': {
                 const decrypted = await decryptChunk(payload)
-                self.postMessage({ type: 'DECRYPT_RESULT', payload: decrypted, requestId })
+                self.postMessage(
+                    { type: 'DECRYPT_RESULT', payload: decrypted, requestId },
+                    [decrypted.decryptedBuffer]
+                )
                 break
             }
 

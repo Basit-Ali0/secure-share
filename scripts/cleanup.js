@@ -74,8 +74,13 @@ async function cleanupExpiredFiles() {
                     Key: file.storage_path
                 }))
                 console.log(`  🗑️  R2 deleted: ${file.storage_path}`)
+            } else if (file.storage_backend === 'r2' && !r2Client) {
+                // R2 file but no R2 client — skip, don't fall through to Supabase
+                console.warn(`  ⚠️  Skipping R2 file (R2 client not configured): ${file.storage_path}`)
+                errors.push(`${file.original_name} - R2 client not configured, cannot delete`)
+                continue
             } else {
-                // Fallback: try Supabase Storage
+                // Legacy Supabase Storage files
                 const { error: storageError } = await supabase.storage
                     .from('encrypted-files')
                     .remove([file.storage_path])

@@ -24,8 +24,10 @@ dotenv.config()
 const app = express()
 
 // Middleware
-app.use(cors())
-app.use(express.json({ limit: '100mb' }))
+app.use(cors({
+    origin: process.env.CORS_ORIGIN || true, // Set CORS_ORIGIN in production
+}))
+app.use(express.json({ limit: '1mb' }))
 
 // Validate required environment variables
 if (!process.env.VITE_SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
@@ -388,6 +390,11 @@ const distPath = path.join(__dirname, '..', 'dist')
 
 // Serve Vite build output
 app.use(express.static(distPath))
+
+// API 404 handler — return JSON instead of SPA HTML for unknown API routes
+app.all('/api/*', (req, res) => {
+    res.status(404).json({ message: `API route not found: ${req.method} ${req.path}` })
+})
 
 // SPA fallback: serve index.html for all non-API routes
 app.get('*', (req, res) => {

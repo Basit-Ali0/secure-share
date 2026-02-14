@@ -53,8 +53,14 @@ export default function SharePage() {
             setLoading(true)
             const response = await fetch(`/api/files/${fileId}`)
             if (!response.ok) {
-                const data = await response.json()
-                throw new Error(data.message || 'File not found')
+                let message = `Request failed with status ${response.status}`
+                try {
+                    const data = await response.json()
+                    message = data.message || message
+                } catch {
+                    // Response body is not JSON (e.g., HTML 502 from reverse proxy)
+                }
+                throw new Error(message)
             }
             const data = await response.json()
             setMetadata(data)
@@ -199,10 +205,10 @@ export default function SharePage() {
                         </div>
                         {timeLeft !== null && (
                             <div className={`flex items-center gap-1.5 border px-3 py-1.5 rounded-lg ${timeLeft <= 0
-                                    ? 'bg-red-900/20 border-red-500/30'
-                                    : timeLeft < 3600000
-                                        ? 'bg-amber-900/20 border-amber-500/30'
-                                        : 'bg-surface-variant/30 border-outline-variant/50'
+                                ? 'bg-red-900/20 border-red-500/30'
+                                : timeLeft < 3600000
+                                    ? 'bg-amber-900/20 border-amber-500/30'
+                                    : 'bg-surface-variant/30 border-outline-variant/50'
                                 }`}>
                                 <span className={`material-symbols-outlined text-[14px] ${timeLeft <= 0 ? 'text-red-400' : timeLeft < 3600000 ? 'text-amber-400' : 'text-primary'
                                     }`}>schedule</span>
@@ -257,10 +263,7 @@ export default function SharePage() {
                     {/* Security Note */}
                     <div className="text-center px-4">
                         <p className="text-[12px] leading-5 text-on-surface-variant">
-                            Zero-knowledge encryption ensures your data remains private.{' '}
-                            <a className="text-primary hover:text-primary-400 hover:underline" href="#">
-                                Learn more
-                            </a>
+                            Zero-knowledge encryption ensures your data remains private.
                         </p>
                     </div>
                 </div>

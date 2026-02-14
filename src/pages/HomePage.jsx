@@ -96,9 +96,14 @@ export default function HomePage() {
 
     const handleCopy = async () => {
         if (shareUrl) {
-            await navigator.clipboard.writeText(shareUrl)
-            setCopied(true)
-            setTimeout(() => setCopied(false), 2000)
+            try {
+                await navigator.clipboard.writeText(shareUrl)
+                setCopied(true)
+                setTimeout(() => setCopied(false), 2000)
+            } catch {
+                // Clipboard API may fail in insecure context or denied permissions
+                prompt('Copy this link:', shareUrl)
+            }
         }
     }
 
@@ -118,7 +123,7 @@ export default function HomePage() {
                 {/* Hero Text */}
                 <div className="text-center mb-6 md:mb-8">
                     <h1 className="text-2xl sm:text-3xl font-normal text-white mb-1">Masked Transfer</h1>
-                    <p className="text-on-surface-variant text-sm">Server-side encrypted. Zero-knowledge.</p>
+                    <p className="text-on-surface-variant text-sm">Client-side encrypted. Zero-knowledge.</p>
                 </div>
 
                 {/* Main Card */}

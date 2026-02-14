@@ -273,7 +273,7 @@ export async function downloadAndDecryptStreaming(
             headers: { 'Range': `bytes=${range.start}-${range.end}` }
         })
 
-        if (!chunkResponse.ok && chunkResponse.status !== 206) {
+        if (!chunkResponse.ok) {
             throw new Error(`Failed to download chunk ${i + 1}`)
         }
 
@@ -382,7 +382,7 @@ function arrayBufferToHex(buffer) {
 function hexToArrayBuffer(hex) {
     const bytes = new Uint8Array(hex.length / 2)
     for (let i = 0; i < hex.length; i += 2) {
-        bytes[i / 2] = parseInt(hex.substr(i, 2), 16)
+        bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16)
     }
     return bytes.buffer
 }

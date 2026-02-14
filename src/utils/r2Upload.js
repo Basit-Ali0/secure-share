@@ -81,52 +81,66 @@ async function multipartUploadToR2(encryptedChunks, authTags, fileId, onProgress
     // 1. Initiate multipart upload
     const { uploadId, objectKey } = await initiateMultipartUpload(fileId)
 
-    onProgress(5, 'uploading')
+    try {
+        onProgress(5, 'uploading')
 
-    // 2. Upload chunks in parallel (max 3 concurrent)
-    const parts = []
-    const chunkSizes = [] // Track sizes for download
-    let completedChunks = 0
+        // 2. Upload chunks in parallel (max 3 concurrent)
+        const parts = []
+        const chunkSizes = [] // Track sizes for download
+        let completedChunks = 0
 
-    // Create upload queue
-    const uploadQueue = encryptedChunks.map((chunk, index) => ({
-        chunk,
-        authTag: authTags[index],
-        partNumber: index + 1 // S3 parts are 1-indexed
-    }))
+        // Create upload queue
+        const uploadQueue = encryptedChunks.map((chunk, index) => ({
+            chunk,
+            authTag: authTags[index],
+            partNumber: index + 1 // S3 parts are 1-indexed
+        }))
 
-    // Process queue with concurrency limit
-    const uploadPart = async (item) => {
-        const { chunk, authTag, partNumber } = item
+        // Process queue with concurrency limit
+        const uploadPart = async (item) => {
+            const { chunk, authTag, partNumber } = item
 
-        // Combine chunk + authTag for storage
-        const combined = new Uint8Array(chunk.byteLength + authTag.byteLength)
-        combined.set(new Uint8Array(chunk), 0)
-        combined.set(new Uint8Array(authTag), chunk.byteLength)
+            // Combine chunk + authTag for storage
+            const combined = new Uint8Array(chunk.byteLength + authTag.byteLength)
+            combined.set(new Uint8Array(chunk), 0)
+            combined.set(new Uint8Array(authTag), chunk.byteLength)
 
-        // Track chunk size (encrypted + auth tag)
-        chunkSizes[partNumber - 1] = combined.byteLength
+            // Track chunk size (encrypted + auth tag)
+            chunkSizes[partNumber - 1] = combined.byteLength
 
-        const { etag } = await uploadChunkToR2(objectKey, uploadId, partNumber, combined)
+            const { etag } = await uploadChunkToR2(objectKey, uploadId, partNumber, combined)
 
-        parts[partNumber - 1] = { partNumber, etag }
-        completedChunks++
+            parts[partNumber - 1] = { partNumber, etag }
+            completedChunks++
 
-        const progress = 5 + (completedChunks / totalChunks) * 90 // 5-95%
-        onProgress(progress, 'uploading')
+            const progress = 5 + (completedChunks / totalChunks) * 90 // 5-95%
+            onProgress(progress, 'uploading')
+        }
+
+        // Parallel upload with concurrency limit
+        await parallelProcess(uploadQueue, uploadPart, MAX_CONCURRENT_UPLOADS)
+
+        onProgress(95, 'finalizing')
+
+        // 3. Complete multipart upload
+        await completeMultipartUpload(objectKey, uploadId, parts)
+
+        onProgress(100, 'complete')
+
+        return { objectKey, totalChunks, chunkSizes }
+    } catch (error) {
+        // Abort multipart upload on failure to prevent stale uploads in R2
+        try {
+            await fetch(`/api/r2/abort-upload`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ objectKey, uploadId })
+            })
+        } catch {
+            // Best-effort abort — cleanup scripts will handle stale uploads
+        }
+        throw error
     }
-
-    // Parallel upload with concurrency limit
-    await parallelProcess(uploadQueue, uploadPart, MAX_CONCURRENT_UPLOADS)
-
-    onProgress(95, 'finalizing')
-
-    // 3. Complete multipart upload
-    await completeMultipartUpload(objectKey, uploadId, parts)
-
-    onProgress(100, 'complete')
-
-    return { objectKey, totalChunks, chunkSizes }
 }
 
 
@@ -222,6 +236,9 @@ export async function completeMultipartUpload(objectKey, uploadId, parts) {
  * Download file from R2
  * For simple uploads (1 chunk), downloads entire file
  * For multipart uploads, downloads entire file and splits chunks using stored sizes
+ * @deprecated This function loads the entire file into memory. For large files,
+ * use downloadAndDecryptStreaming() in streamingEncryption.js instead.
+ * Retained only as a legacy fallback for small files.
  * @param {string} objectKey - R2 object key
  * @param {number} totalChunks - Expected number of chunks
  * @param {number[]|null} chunkSizes - Size of each stored chunk (encrypted + auth tag)

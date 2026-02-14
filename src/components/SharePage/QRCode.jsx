@@ -5,6 +5,8 @@ export default function QRCode({ url }) {
     const [qrDataUrl, setQrDataUrl] = useState('')
 
     useEffect(() => {
+        let cancelled = false
+
         if (url) {
             QRCodeLib.toDataURL(url, {
                 width: 256,
@@ -14,9 +16,13 @@ export default function QRCode({ url }) {
                     light: '#000000' // black background
                 }
             })
-                .then(setQrDataUrl)
+                .then((dataUrl) => {
+                    if (!cancelled) setQrDataUrl(dataUrl)
+                })
                 .catch((err) => console.error('QR code generation failed:', err))
         }
+
+        return () => { cancelled = true }
     }, [url])
 
     if (!qrDataUrl) return null

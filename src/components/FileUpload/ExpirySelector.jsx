@@ -11,7 +11,7 @@ export default function ExpirySelector({ selected, onChange }) {
             <div className="flex w-full rounded-full border border-outline overflow-hidden h-10">
                 {EXPIRY_OPTIONS.map((option, index) => (
                     <button
-                        key={option.value}
+                        key={`${option.unit}-${option.value}`}
                         onClick={() => onChange(option)}
                         className={`
                             flex-1 text-sm font-medium transition-colors relative

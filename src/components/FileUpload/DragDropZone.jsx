@@ -1,19 +1,27 @@
 import { useState, useRef } from 'react'
 
+const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024 // 5GB
+
 export default function DragDropZone({ onFileSelect, selectedFile }) {
     const [isDragging, setIsDragging] = useState(false)
     const fileInputRef = useRef(null)
+    const dragCounter = useRef(0)
 
     const handleDragEnter = (e) => {
         e.preventDefault()
         e.stopPropagation()
+        dragCounter.current++
         setIsDragging(true)
     }
 
     const handleDragLeave = (e) => {
         e.preventDefault()
         e.stopPropagation()
-        setIsDragging(false)
+        dragCounter.current--
+        if (dragCounter.current <= 0) {
+            dragCounter.current = 0
+            setIsDragging(false)
+        }
     }
 
     const handleDragOver = (e) => {
@@ -24,6 +32,7 @@ export default function DragDropZone({ onFileSelect, selectedFile }) {
     const handleDrop = (e) => {
         e.preventDefault()
         e.stopPropagation()
+        dragCounter.current = 0
         setIsDragging(false)
 
         const files = e.dataTransfer.files
@@ -37,9 +46,9 @@ export default function DragDropZone({ onFileSelect, selectedFile }) {
         if (files && files.length > 0) {
             handleFileSelection(files[0])
         }
+        // Reset input so re-selecting the same file triggers onChange
+        e.target.value = ''
     }
-
-    const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024 // 5GB
 
     const handleFileSelection = (file) => {
         if (file.size > MAX_FILE_SIZE) {

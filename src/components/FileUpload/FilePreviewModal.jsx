@@ -1,32 +1,35 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 
 export default function FilePreviewModal({ file, onClose }) {
     const [previewUrl, setPreviewUrl] = useState(null)
     const [fileType, setFileType] = useState(null)
 
+    // Escape key handler
+    const handleKeyDown = useCallback((e) => {
+        if (e.key === 'Escape') onClose()
+    }, [onClose])
+
+    useEffect(() => {
+        document.addEventListener('keydown', handleKeyDown)
+        return () => document.removeEventListener('keydown', handleKeyDown)
+    }, [handleKeyDown])
+
     useEffect(() => {
         if (!file) return
 
-        let objectUrl = null
+        // Determine file type and create preview URL in one pass
+        const type = file.type.startsWith('image/') ? 'image'
+            : file.type === 'application/pdf' ? 'pdf'
+                : file.type.startsWith('video/') ? 'video'
+                    : file.type.startsWith('audio/') ? 'audio'
+                        : 'unsupported'
 
-        if (file.type.startsWith('image/')) {
-            setFileType('image')
+        setFileType(type)
+
+        let objectUrl = null
+        if (type !== 'unsupported') {
             objectUrl = URL.createObjectURL(file)
             setPreviewUrl(objectUrl)
-        } else if (file.type === 'application/pdf') {
-            setFileType('pdf')
-            objectUrl = URL.createObjectURL(file)
-            setPreviewUrl(objectUrl)
-        } else if (file.type.startsWith('video/')) {
-            setFileType('video')
-            objectUrl = URL.createObjectURL(file)
-            setPreviewUrl(objectUrl)
-        } else if (file.type.startsWith('audio/')) {
-            setFileType('audio')
-            objectUrl = URL.createObjectURL(file)
-            setPreviewUrl(objectUrl)
-        } else {
-            setFileType('unsupported')
         }
 
         return () => {
@@ -42,6 +45,9 @@ export default function FilePreviewModal({ file, onClose }) {
         <div
             className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
             onClick={onClose}
+            role="dialog"
+            aria-modal="true"
+            aria-label="File preview"
         >
             <div
                 className="bg-surface-container border border-outline-variant rounded-m3 max-w-4xl w-full max-h-[90vh] overflow-auto shadow-purple-glow-lg"
@@ -54,6 +60,7 @@ export default function FilePreviewModal({ file, onClose }) {
                         <button
                             onClick={onClose}
                             className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-on-surface-variant transition-colors"
+                            aria-label="Close preview"
                         >
                             <span className="material-symbols-outlined">close</span>
                         </button>

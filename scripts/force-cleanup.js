@@ -7,6 +7,14 @@ import dotenv from 'dotenv'
 
 dotenv.config()
 
+// Validate required env vars
+const required = ['VITE_SUPABASE_URL', 'SUPABASE_SERVICE_KEY', 'R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']
+const missing = required.filter(k => !process.env[k])
+if (missing.length > 0) {
+    console.error(`❌ Missing required environment variables: ${missing.join(', ')}`)
+    process.exit(1)
+}
+
 const supabase = createClient(
     process.env.VITE_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_KEY

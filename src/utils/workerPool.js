@@ -97,22 +97,22 @@ export class WorkerPool {
      * Process queued jobs — assigns work to available workers
      */
     processQueue() {
-        if (this.queue.length === 0) return
+        while (this.queue.length > 0) {
+            // Find available worker
+            const availableWorker = this.workers.find(w => !w.busy)
+            if (!availableWorker) return
 
-        // Find available worker
-        const availableWorker = this.workers.find(w => !w.busy)
-        if (!availableWorker) return
+            const job = this.queue.shift()
+            availableWorker.busy = true
+            availableWorker.currentRequestId = job.requestId
+            this.activeJobs.set(job.requestId, job)
 
-        const job = this.queue.shift()
-        availableWorker.busy = true
-        availableWorker.currentRequestId = job.requestId
-        this.activeJobs.set(job.requestId, job)
-
-        availableWorker.postMessage({
-            type: job.type,
-            payload: job.payload,
-            requestId: job.requestId
-        })
+            availableWorker.postMessage({
+                type: job.type,
+                payload: job.payload,
+                requestId: job.requestId
+            })
+        }
     }
 
     /**
@@ -139,7 +139,7 @@ export class WorkerPool {
      * Terminate all workers
      */
     terminate() {
-        this.workers.forEach(w => {
+        this.workers.forEach((w) => {
             w.currentRequestId = null
             w.terminate()
         })

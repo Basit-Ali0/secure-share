@@ -16,13 +16,13 @@ export default function ExpirySelector({ selected, onChange }) {
                         className={`
                             flex-1 text-sm font-medium transition-colors relative
                             ${index < EXPIRY_OPTIONS.length - 1 ? 'border-r border-outline' : ''}
-                            ${selected?.value === option.value
+                            ${selected?.value === option.value && selected?.unit === option.unit
                                 ? 'bg-primary-700 text-primary-100 hover:bg-primary-600'
                                 : 'hover:bg-white/5 text-on-surface-variant'
                             }
                         `}
                     >
-                        {selected?.value === option.value && (
+                        {selected?.value === option.value && selected?.unit === option.unit && (
                             <span className="material-symbols-outlined text-[16px] absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 icon-filled">
                                 check
                             </span>

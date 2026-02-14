@@ -42,6 +42,14 @@ const supabase = createClient(
 )
 
 // ============================================
+// Health Check
+// ============================================
+
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() })
+})
+
+// ============================================
 // R2 Upload Endpoints
 // ============================================
 

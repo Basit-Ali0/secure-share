@@ -25,3 +25,5 @@ services:
         sync: false
       - key: CLEANUP_SECRET
         sync: false
+      - key: CORS_ORIGIN
+        sync: false

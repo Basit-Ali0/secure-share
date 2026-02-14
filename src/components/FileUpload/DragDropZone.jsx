@@ -39,7 +39,13 @@ export default function DragDropZone({ onFileSelect, selectedFile }) {
         }
     }
 
+    const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024 // 5GB
+
     const handleFileSelection = (file) => {
+        if (file.size > MAX_FILE_SIZE) {
+            alert('File is too large. Maximum size is 5GB.')
+            return
+        }
         if (onFileSelect) {
             onFileSelect(file)
         }

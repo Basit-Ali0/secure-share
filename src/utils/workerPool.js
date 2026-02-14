@@ -65,6 +65,15 @@ export class WorkerPool {
     handleWorkerError(workerIndex, error) {
         console.error(`Worker ${workerIndex} error:`, error)
         this.workers[workerIndex].busy = false
+
+        // Find and reject any active job assigned to this worker
+        for (const [requestId, job] of this.activeJobs) {
+            // Reject the oldest active job (most likely the one that failed)
+            this.activeJobs.delete(requestId)
+            job.reject(new Error(`Worker ${workerIndex} error: ${error.message || 'Unknown error'}`))
+            break
+        }
+
         this.processQueue()
     }
 
@@ -126,7 +135,17 @@ export class WorkerPool {
     terminate() {
         this.workers.forEach(w => w.terminate())
         this.workers = []
+
+        // Reject all queued jobs
+        for (const job of this.queue) {
+            job.reject(new Error('Worker pool terminated'))
+        }
         this.queue = []
+
+        // Reject all active jobs
+        for (const [, job] of this.activeJobs) {
+            job.reject(new Error('Worker pool terminated'))
+        }
         this.activeJobs.clear()
         this.initialized = false
     }

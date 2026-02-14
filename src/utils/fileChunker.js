@@ -12,6 +12,10 @@ const DEFAULT_CHUNK_SIZE = 50 * 1024 * 1024 // 50MB chunks
  * @yields {Object} - { buffer, index, offset, size, isLast, progress }
  */
 export async function* chunkFile(file, chunkSize = DEFAULT_CHUNK_SIZE) {
+    if (file.size === 0) {
+        return // Empty file — nothing to chunk
+    }
+
     const totalChunks = Math.ceil(file.size / chunkSize)
     let offset = 0
     let chunkIndex = 0

@@ -13,7 +13,9 @@ export default function QRCode({ url }) {
                     dark: '#BB86FC', // primary purple
                     light: '#000000' // black background
                 }
-            }).then(setQrDataUrl)
+            })
+                .then(setQrDataUrl)
+                .catch((err) => console.error('QR code generation failed:', err))
         }
     }, [url])
 

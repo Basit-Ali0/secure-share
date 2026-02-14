@@ -13,12 +13,13 @@ import dotenv from 'dotenv'
 // Load environment variables
 dotenv.config()
 
-// Log R2 config (without secrets)
-console.log('[R2] Initializing with:')
-console.log(`  Account ID: ${process.env.R2_ACCOUNT_ID ? '✓ Set' : '✗ Missing'}`)
-console.log(`  Access Key: ${process.env.R2_ACCESS_KEY_ID ? '✓ Set' : '✗ Missing'}`)
-console.log(`  Secret Key: ${process.env.R2_SECRET_ACCESS_KEY ? '✓ Set' : '✗ Missing'}`)
-console.log(`  Bucket: ${process.env.R2_BUCKET_NAME || 'Not set, using default'}`)
+// Validate required R2 environment variables
+const requiredR2Vars = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']
+const missingVars = requiredR2Vars.filter(v => !process.env[v])
+if (missingVars.length > 0) {
+    console.error(`❌ Missing required R2 env vars: ${missingVars.join(', ')}`)
+    process.exit(1)
+}
 
 // R2 Client configuration
 const r2Client = new S3Client({
@@ -32,10 +33,16 @@ const r2Client = new S3Client({
 
 const BUCKET_NAME = process.env.R2_BUCKET_NAME || 'secure-share-files'
 
+// UUID v4 format regex for fileId validation
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 /**
  * Get presigned URL for simple single-file upload (for files < 5MB)
  */
 export async function getPresignedUploadUrl(fileId) {
+    if (!UUID_REGEX.test(fileId)) {
+        throw new Error('Invalid fileId format')
+    }
     const objectKey = `files/${fileId}.enc`
 
     const command = new PutObjectCommand({
@@ -53,6 +60,9 @@ export async function getPresignedUploadUrl(fileId) {
  * Initiate multipart upload
  */
 export async function initiateMultipartUpload(fileId) {
+    if (!UUID_REGEX.test(fileId)) {
+        throw new Error('Invalid fileId format')
+    }
     const objectKey = `files/${fileId}.enc`
 
     const command = new CreateMultipartUploadCommand({
@@ -90,15 +100,30 @@ export async function getPresignedPartUrl(objectKey, uploadId, partNumber) {
  * Complete multipart upload
  */
 export async function completeMultipartUpload(objectKey, uploadId, parts) {
+    // Validate parts array
+    if (!Array.isArray(parts) || parts.length === 0) {
+        throw new Error('parts must be a non-empty array')
+    }
+    for (const p of parts) {
+        if (!Number.isInteger(p.partNumber) || p.partNumber < 1) {
+            throw new Error(`Invalid partNumber: ${p.partNumber}`)
+        }
+        if (typeof p.etag !== 'string' || !p.etag) {
+            throw new Error(`Invalid etag for part ${p.partNumber}`)
+        }
+    }
+
     const command = new CompleteMultipartUploadCommand({
         Bucket: BUCKET_NAME,
         Key: objectKey,
         UploadId: uploadId,
         MultipartUpload: {
-            Parts: parts.map(p => ({
-                PartNumber: p.partNumber,
-                ETag: p.etag
-            }))
+            Parts: parts
+                .sort((a, b) => a.partNumber - b.partNumber)
+                .map(p => ({
+                    PartNumber: p.partNumber,
+                    ETag: p.etag
+                }))
         }
     })
 

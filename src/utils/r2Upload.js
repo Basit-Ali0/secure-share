@@ -31,7 +31,7 @@ export async function uploadToR2(encryptedChunks, authTags, fileId, onProgress =
 /**
  * Simple single-file upload for small files
  */
-async function simpleUploadToR2(encryptedChunk, authTag, fileId, onProgress) {
+export async function simpleUploadToR2(encryptedChunk, authTag, fileId, onProgress) {
     onProgress(0, 'initiating')
 
     // Get presigned URL
@@ -152,7 +152,7 @@ async function parallelProcess(items, processFn, concurrency) {
 /**
  * Initiate multipart upload (calls server endpoint)
  */
-async function initiateMultipartUpload(fileId) {
+export async function initiateMultipartUpload(fileId) {
     const response = await fetch('/api/r2/initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -169,7 +169,7 @@ async function initiateMultipartUpload(fileId) {
 /**
  * Upload single chunk to R2
  */
-async function uploadChunkToR2(objectKey, uploadId, partNumber, data) {
+export async function uploadChunkToR2(objectKey, uploadId, partNumber, data) {
     // Get presigned URL for this part
     const urlResponse = await fetch('/api/r2/presign-part', {
         method: 'POST',
@@ -201,7 +201,7 @@ async function uploadChunkToR2(objectKey, uploadId, partNumber, data) {
 /**
  * Complete multipart upload
  */
-async function completeMultipartUpload(objectKey, uploadId, parts) {
+export async function completeMultipartUpload(objectKey, uploadId, parts) {
     const response = await fetch('/api/r2/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

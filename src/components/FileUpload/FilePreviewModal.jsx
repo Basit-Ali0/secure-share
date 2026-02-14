@@ -7,25 +7,31 @@ export default function FilePreviewModal({ file, onClose }) {
     useEffect(() => {
         if (!file) return
 
+        let objectUrl = null
+
         if (file.type.startsWith('image/')) {
             setFileType('image')
-            setPreviewUrl(URL.createObjectURL(file))
+            objectUrl = URL.createObjectURL(file)
+            setPreviewUrl(objectUrl)
         } else if (file.type === 'application/pdf') {
             setFileType('pdf')
-            setPreviewUrl(URL.createObjectURL(file))
+            objectUrl = URL.createObjectURL(file)
+            setPreviewUrl(objectUrl)
         } else if (file.type.startsWith('video/')) {
             setFileType('video')
-            setPreviewUrl(URL.createObjectURL(file))
+            objectUrl = URL.createObjectURL(file)
+            setPreviewUrl(objectUrl)
         } else if (file.type.startsWith('audio/')) {
             setFileType('audio')
-            setPreviewUrl(URL.createObjectURL(file))
+            objectUrl = URL.createObjectURL(file)
+            setPreviewUrl(objectUrl)
         } else {
             setFileType('unsupported')
         }
 
         return () => {
-            if (previewUrl) {
-                URL.revokeObjectURL(previewUrl)
+            if (objectUrl) {
+                URL.revokeObjectURL(objectUrl)
             }
         }
     }, [file])

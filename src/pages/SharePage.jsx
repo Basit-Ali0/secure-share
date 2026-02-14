@@ -1,8 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { formatFileSize, getFileIcon } from '../utils/fileUtils'
-import { downloadFromR2 } from '../utils/r2Upload'
-import { decryptFileStreaming, terminateWorkerPool } from '../utils/streamingEncryption'
+import { downloadAndDecryptStreaming, terminateWorkerPool } from '../utils/streamingEncryption'
 import QRCode from '../components/SharePage/QRCode'
 
 export default function SharePage() {
@@ -52,62 +51,35 @@ export default function SharePage() {
                 throw new Error('Encryption keys missing from URL. Invalid share link.')
             }
 
-            setDownloadStatus('Downloading encrypted file...')
-
-            const { encryptedChunks, authTags } = await downloadFromR2(
+            await downloadAndDecryptStreaming(
                 metadata.storage_path,
                 metadata.chunk_count || 1,
                 metadata.chunk_sizes || null,
-                (progress) => {
-                    setDownloadProgress(progress * 0.4)
-                }
-            )
-
-            setDownloadStatus('Decrypting in your browser...')
-
-            const decryptedBlob = await decryptFileStreaming(
-                encryptedChunks,
-                authTags,
                 keyHex,
                 ivHex,
-                (progress) => {
-                    setDownloadProgress(40 + progress * 0.5)
+                metadata.original_name,
+                (progress, statusText) => {
+                    setDownloadProgress(progress)
+                    setDownloadStatus(statusText)
                 }
             )
-
-            setDownloadProgress(95)
-            setDownloadStatus('Preparing download...')
-
-            triggerDownload(decryptedBlob, metadata.original_name)
-
-            setDownloadProgress(100)
-            setDownloadStatus('Complete!')
 
             setTimeout(() => {
                 setDownloading(false)
                 setDownloadProgress(0)
                 loadFileMetadata()
-            }, 1000)
+            }, 1500)
 
         } catch (err) {
             console.error('Download error:', err)
-            alert(`Download failed: ${err.message}`)
+            if (err.message !== 'Download cancelled') {
+                alert(`Download failed: ${err.message}`)
+            }
             setDownloading(false)
             setDownloadProgress(0)
         } finally {
             terminateWorkerPool()
         }
-    }
-
-    function triggerDownload(blob, filename) {
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = filename
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        URL.revokeObjectURL(url)
     }
 
     // Loading State

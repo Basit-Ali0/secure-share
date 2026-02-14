@@ -9,15 +9,17 @@ self.onmessage = async function (e) {
 
     try {
         switch (type) {
-            case 'ENCRYPT_CHUNK':
+            case 'ENCRYPT_CHUNK': {
                 const result = await encryptChunk(payload)
                 self.postMessage({ type: 'ENCRYPT_RESULT', payload: result, requestId })
                 break
+            }
 
-            case 'DECRYPT_CHUNK':
+            case 'DECRYPT_CHUNK': {
                 const decrypted = await decryptChunk(payload)
                 self.postMessage({ type: 'DECRYPT_RESULT', payload: decrypted, requestId })
                 break
+            }
 
             default:
                 throw new Error(`Unknown message type: ${type}`)

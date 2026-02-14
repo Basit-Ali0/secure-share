@@ -4,7 +4,7 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 if (!supabaseUrl || !supabaseAnonKey) {
-    console.error('Missing Supabase credentials. Please add them to .env file.')
+    throw new Error('Missing Supabase credentials. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env file.')
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
@@ -48,11 +48,7 @@ export async function saveFileMetadata(metadata) {
             storage_path: metadata.storagePath,
             expires_at: metadata.expiresAt,
             password_hash: metadata.passwordHash || null,
-            max_downloads: metadata.maxDownloads || null,
-            encryption_mode: metadata.encryptionMode || 'zero-knowledge',
-            server_key: metadata.serverKey || null,
-            iv: metadata.iv || null,
-            auth_tag: metadata.authTag || null
+            max_downloads: metadata.maxDownloads || null
         })
         .select()
         .single()

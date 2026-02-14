@@ -4,8 +4,7 @@ import UploadProgress from '../components/FileUpload/UploadProgress'
 import ExpirySelector, { EXPIRY_OPTIONS } from '../components/FileUpload/ExpirySelector'
 import FilePreviewModal from '../components/FileUpload/FilePreviewModal'
 import QRCode from '../components/SharePage/QRCode'
-import { encryptFileStreaming, terminateWorkerPool } from '../utils/streamingEncryption'
-import { uploadToR2 } from '../utils/r2Upload'
+import { encryptAndUploadStreaming, terminateWorkerPool } from '../utils/streamingEncryption'
 import { formatFileSize } from '../utils/fileUtils'
 
 export default function HomePage() {
@@ -36,33 +35,15 @@ export default function HomePage() {
 
             const fileId = crypto.randomUUID()
 
-            setUploadStatus('Encrypting file in your browser...')
-            setUploadStage('encrypting')
-
-            const encryptionResult = await encryptFileStreaming(
-                selectedFile,
-                (progress, stage, completed, total) => {
-                    setUploadProgress(progress * 0.5)
-                    setUploadStatus(`Encrypting: chunk ${completed}/${total}`)
-                }
-            )
-
-            setUploadStatus('Uploading encrypted file...')
+            setUploadStatus('Encrypting & uploading...')
             setUploadStage('uploading')
 
-            const uploadResult = await uploadToR2(
-                encryptionResult.encryptedChunks,
-                encryptionResult.authTags,
+            const uploadResult = await encryptAndUploadStreaming(
+                selectedFile,
                 fileId,
-                (progress, stage) => {
-                    setUploadProgress(50 + progress * 0.45)
-                    if (stage === 'initiating') {
-                        setUploadStatus('Starting upload...')
-                    } else if (stage === 'uploading') {
-                        setUploadStatus('Uploading encrypted chunks...')
-                    } else if (stage === 'finalizing') {
-                        setUploadStatus('Finalizing upload...')
-                    }
+                (progress, statusText) => {
+                    setUploadProgress(progress * 0.95) // Reserve 5% for metadata save
+                    setUploadStatus(statusText)
                 }
             )
 
@@ -76,7 +57,7 @@ export default function HomePage() {
                 expiresAt.setDate(expiresAt.getDate() + selectedExpiry.value)
             }
 
-            await fetch('/api/files/metadata', {
+            const metadataResponse = await fetch('/api/files/metadata', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -92,11 +73,16 @@ export default function HomePage() {
                 })
             })
 
+            if (!metadataResponse.ok) {
+                const errData = await metadataResponse.json().catch(() => ({}))
+                throw new Error(errData.message || 'Failed to save file metadata')
+            }
+
             setUploadStatus('Complete!')
             setUploadProgress(100)
 
             const baseUrl = window.location.origin
-            const url = `${baseUrl}/share/${fileId}#key=${encryptionResult.keyHex}&iv=${encryptionResult.ivHex}`
+            const url = `${baseUrl}/share/${fileId}#key=${uploadResult.keyHex}&iv=${uploadResult.ivHex}`
             setShareUrl(url)
 
         } catch (error) {

@@ -1,10 +1,12 @@
 /**
- * SecureShare Server - Zero-Knowledge File Sharing API
+ * MaskedFile Server - Zero-Knowledge File Sharing API
  * Handles R2 multipart uploads and cleanup
  */
 
 import express from 'express'
 import cors from 'cors'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import { createClient } from '@supabase/supabase-js'
 import dotenv from 'dotenv'
 import {
@@ -24,10 +26,16 @@ const app = express()
 app.use(cors())
 app.use(express.json({ limit: '100mb' }))
 
-// Supabase client (for metadata only)
+// Validate required environment variables
+if (!process.env.VITE_SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
+    console.error('❌ Missing required env vars: VITE_SUPABASE_URL, SUPABASE_SERVICE_KEY')
+    process.exit(1)
+}
+
+// Supabase client — uses service_role key (bypasses RLS for server operations)
 const supabase = createClient(
     process.env.VITE_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
+    process.env.SUPABASE_SERVICE_KEY
 )
 
 // ============================================
@@ -221,11 +229,10 @@ app.get('/api/files/:fileId', async (req, res) => {
             return res.status(410).json({ message: 'File has expired' })
         }
 
-        // Increment download count
-        await supabase
-            .from('files')
-            .update({ download_count: (metadata.download_count || 0) + 1 })
-            .eq('file_id', fileId)
+        // Increment download count atomically via RPC to avoid race conditions
+        await supabase.rpc('increment_download_count', {
+            file_id_param: fileId
+        })
 
         res.json(metadata)
 
@@ -246,9 +253,13 @@ app.get('/api/files/:fileId', async (req, res) => {
  */
 app.get('/api/cleanup-expired', async (req, res) => {
     try {
-        // Verify cleanup secret (skip check if not configured - for local dev)
+        // Verify cleanup secret — always required
         const cleanupSecret = process.env.CLEANUP_SECRET
-        if (cleanupSecret && req.headers['x-cleanup-secret'] !== cleanupSecret) {
+        if (!cleanupSecret) {
+            console.error('[Cleanup] CLEANUP_SECRET not configured')
+            return res.status(500).json({ message: 'Cleanup not configured' })
+        }
+        if (req.headers['x-cleanup-secret'] !== cleanupSecret) {
             console.log('[Cleanup] Unauthorized attempt')
             return res.status(401).json({ message: 'Unauthorized' })
         }
@@ -275,7 +286,7 @@ app.get('/api/cleanup-expired', async (req, res) => {
 
         for (const file of expiredFiles) {
             try {
-                // Delete from storage (R2 or Supabase)
+                // Delete from storage (R2 or Supabase) FIRST
                 if (file.storage_backend === 'r2') {
                     await deleteObject(file.storage_path)
                 } else {
@@ -284,21 +295,23 @@ app.get('/api/cleanup-expired', async (req, res) => {
                         .remove([file.storage_path])
                 }
 
-                // Delete from database
+                // Only delete from database AFTER storage deletion succeeds
+                // This prevents orphaned storage objects
                 const { error: dbError } = await supabase
                     .from('files')
                     .delete()
                     .eq('file_id', file.file_id)
 
                 if (dbError) {
-                    errors.push(`${file.original_name} - ${dbError.message}`)
+                    errors.push(`${file.original_name} - DB delete failed: ${dbError.message}`)
                 } else {
                     deletedCount++
                     console.log(`[Cleanup] Deleted: ${file.original_name}`)
                 }
 
             } catch (error) {
-                errors.push(`${file.original_name} - ${error.message}`)
+                // Storage deletion failed — skip DB deletion to allow retry on next cleanup
+                errors.push(`${file.original_name} - Storage delete failed: ${error.message}`)
             }
         }
 
@@ -316,13 +329,28 @@ app.get('/api/cleanup-expired', async (req, res) => {
         res.status(500).json({ message: error.message })
     }
 })
-
 // ============================================
 // Health Check
 // ============================================
 
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() })
+})
+
+// ============================================
+// Production: Serve Frontend Static Files
+// ============================================
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const distPath = path.join(__dirname, '..', 'dist')
+
+// Serve Vite build output
+app.use(express.static(distPath))
+
+// SPA fallback: serve index.html for all non-API routes
+app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'))
 })
 
 // ============================================

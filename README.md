@@ -359,16 +359,16 @@ flowchart TD
     B --> C{File > chunk threshold?}
     C -->|Yes| D[Split into streaming chunks]
     C -->|No| E[Single chunk]
-    D --> F[Web Worker: encrypt each chunk\nAES-256-GCM]
+    D --> F["Web Worker: encrypt each chunk — AES-256-GCM"]
     E --> F
     F --> G[Assemble encrypted Blob + IV]
-    G --> H[POST /api/files\nmultipart/form-data]
+    G --> H["POST /api/files — multipart/form-data"]
     H --> I[Express streams to R2]
     I --> J[R2 returns storageKey]
     J --> K[Metadata saved to Supabase]
     K --> L[Server returns fileId]
-    L --> M[UI builds share URL:\n/d/{fileId}#base64key]
-    M --> N([User copies & shares link])
+    L --> M["UI builds share URL: /d/fileId + fragment key"]
+    M --> N([User copies and shares link])
 
     style F fill:#7c3aed,color:#fff
     style M fill:#059669,color:#fff
@@ -378,16 +378,16 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A([Recipient opens share link]) --> B[UI reads\nwindow.location.hash → keyBase64]
-    B --> C[GET /api/files/:fileId\nno key in request!]
-    C --> D[Server fetches metadata\nfrom Supabase]
+    A([Recipient opens share link]) --> B["UI reads key from window.location.hash"]
+    B --> C["GET /api/files/:fileId — no key in request!"]
+    C --> D[Server fetches metadata from Supabase]
     D --> E{File expired?}
     E -->|Yes| F([Error: File has expired])
-    E -->|No| G[Server streams ciphertext\nfrom R2]
-    G --> H[Chunked Transfer Encoding\nto browser]
-    H --> I[Web Worker: decrypt each chunk\nAES-256-GCM with keyBase64 + IV]
+    E -->|No| G[Server streams ciphertext from R2]
+    G --> H[Chunked Transfer Encoding to browser]
+    H --> I["Web Worker: decrypt each chunk — AES-256-GCM with key + IV"]
     I --> J[Reassemble plaintext Blob]
-    J --> K([Browser downloads\noriginal file])
+    J --> K([Browser downloads original file])
 
     style I fill:#7c3aed,color:#fff
     style B fill:#1d4ed8,color:#fff

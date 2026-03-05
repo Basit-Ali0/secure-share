@@ -12,6 +12,7 @@ export default function SharePage() {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
     const [downloading, setDownloading] = useState(false)
+    const [downloadComplete, setDownloadComplete] = useState(false)
     const [downloadProgress, setDownloadProgress] = useState(0)
     const [downloadStatus, setDownloadStatus] = useState('')
     const [showQR, setShowQR] = useState(false)
@@ -103,6 +104,7 @@ export default function SharePage() {
 
             setTimeout(() => {
                 setDownloading(false)
+                setDownloadComplete(true)
                 setDownloadProgress(0)
                 // Optimistic: update state instead of re-fetching (avoids double-increment)
                 setMetadata(prev => prev ? { ...prev, download_count: (prev.download_count || 0) + 1 } : prev)
@@ -233,9 +235,12 @@ export default function SharePage() {
 
                     {/* Download Button */}
                     <button
-                        onClick={handleDownload}
+                        onClick={!downloadComplete ? handleDownload : undefined}
                         disabled={downloading}
-                        className="w-full h-12 bg-primary hover:bg-primary-400 hover:shadow-purple-glow-button active:scale-[0.98] text-black rounded-full flex items-center justify-center gap-2 transition-all duration-200 font-medium tracking-wide text-[14px] border border-white/5"
+                        className={`w-full h-12 rounded-full flex items-center justify-center gap-2 transition-all duration-300 font-medium tracking-wide text-[14px] border border-white/5 ${downloadComplete
+                                ? 'bg-green-600 text-white cursor-default'
+                                : 'bg-primary hover:bg-primary-400 hover:shadow-purple-glow-button active:scale-[0.98] text-black'
+                            }`}
                     >
                         {downloading ? (
                             <>
@@ -244,7 +249,7 @@ export default function SharePage() {
                             </>
                         ) : downloadComplete ? (
                             <>
-                                <span className="material-symbols-outlined text-[20px]">check_circle</span>
+                                <span className="material-symbols-outlined text-[20px] icon-filled">check_circle</span>
                                 Download Complete
                             </>
                         ) : (

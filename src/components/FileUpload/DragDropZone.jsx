@@ -72,8 +72,8 @@ export default function DragDropZone({ onFileSelect, selectedFile }) {
             onDrop={handleDrop}
             onClick={handleClick}
             className={`
-                upload-zone min-h-[220px] group cursor-pointer relative
-                ${isDragging ? 'border-primary bg-surface-variant' : ''}
+                upload-zone aspect-square w-full group cursor-pointer relative
+                ${isDragging ? 'border-primary bg-surface-variant scale-[1.02]' : ''}
             `}
         >
             {/* Hover overlay */}

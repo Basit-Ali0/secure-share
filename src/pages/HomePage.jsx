@@ -129,7 +129,7 @@ export default function HomePage() {
                 {/* Main Card */}
                 <div className="w-full max-w-[900px]">
                     {!uploading && !shareUrl && (
-                        <div className="glass-card p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 lg:gap-12 items-start card-hover">
+                        <div className={`glass-card p-4 sm:p-6 grid grid-cols-1 ${selectedFile ? 'md:grid-cols-2' : ''} gap-6 md:gap-8 lg:gap-12 items-start card-hover transition-all duration-500`}>
                             {/* Left: Upload Zone */}
                             <div className="flex flex-col gap-4">
                                 <DragDropZone onFileSelect={handleFileSelect} selectedFile={selectedFile} />
@@ -155,19 +155,19 @@ export default function HomePage() {
                             </div>
 
                             {/* Right: Security Options */}
-                            <div className="flex flex-col gap-6 h-full justify-between">
-                                <div className="space-y-6">
-                                    {/* Section Header */}
-                                    <div className="flex items-center gap-2 text-white pb-2 border-b border-outline-variant">
-                                        <span className="material-symbols-outlined text-primary">tune</span>
-                                        <h3 className="text-base font-medium">Security Options</h3>
-                                    </div>
+                            {selectedFile && (
+                                <div className="flex flex-col gap-6 h-full justify-between fade-in-up">
+                                    <div className="space-y-6">
+                                        {/* Section Header */}
+                                        <div className="flex items-center gap-2 text-white pb-2 border-b border-outline-variant">
+                                            <span className="material-symbols-outlined text-primary">tune</span>
+                                            <h3 className="text-base font-medium">Security Options</h3>
+                                        </div>
 
-                                    {/* Expiry Selector */}
-                                    <ExpirySelector selected={selectedExpiry} onChange={setSelectedExpiry} />
+                                        {/* Expiry Selector */}
+                                        <ExpirySelector selected={selectedExpiry} onChange={setSelectedExpiry} />
 
-                                    {/* Preview Button */}
-                                    {selectedFile && (
+                                        {/* Preview Button */}
                                         <button
                                             onClick={() => setShowPreview(true)}
                                             className="w-full h-10 rounded-full border border-outline text-on-surface-variant text-sm font-medium hover:bg-white/5 transition-colors flex items-center justify-center gap-2"
@@ -175,28 +175,24 @@ export default function HomePage() {
                                             <span className="material-symbols-outlined text-lg">visibility</span>
                                             Preview File
                                         </button>
-                                    )}
-                                </div>
+                                    </div>
 
-                                {/* Upload Button */}
-                                <div className="pt-4 space-y-4">
-                                    <button
-                                        onClick={handleUpload}
-                                        disabled={!selectedFile}
-                                        className={`w-full h-12 rounded-full font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${selectedFile
-                                            ? 'bg-primary text-black hover:shadow-purple-glow-button hover:bg-primary-400'
-                                            : 'bg-surface-variant text-on-surface-variant cursor-not-allowed'
-                                            }`}
-                                    >
-                                        <span className="material-symbols-outlined icon-filled">rocket_launch</span>
-                                        Secure & Send
-                                    </button>
-                                    <div className="flex items-center justify-center gap-1.5 text-primary text-[11px] font-medium opacity-80">
-                                        <span className="material-symbols-outlined text-[14px] icon-filled">lock</span>
-                                        <span>Files encrypted before leaving device</span>
+                                    {/* Upload Button */}
+                                    <div className="pt-4 space-y-4">
+                                        <button
+                                            onClick={handleUpload}
+                                            className="w-full h-12 rounded-full font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] bg-primary text-black hover:shadow-purple-glow-button hover:bg-primary-400"
+                                        >
+                                            <span className="material-symbols-outlined icon-filled">rocket_launch</span>
+                                            Secure & Send
+                                        </button>
+                                        <div className="flex items-center justify-center gap-1.5 text-primary text-[11px] font-medium opacity-80">
+                                            <span className="material-symbols-outlined text-[14px] icon-filled">lock</span>
+                                            <span>Files encrypted before leaving device</span>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
                     )}
 

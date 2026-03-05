@@ -242,6 +242,11 @@ export default function SharePage() {
                                 <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
                                 {downloadStatus} ({Math.round(downloadProgress)}%)
                             </>
+                        ) : downloadComplete ? (
+                            <>
+                                <span className="material-symbols-outlined text-[20px]">check_circle</span>
+                                Download Complete
+                            </>
                         ) : (
                             <>
                                 <span className="material-symbols-outlined text-[20px]">download</span>

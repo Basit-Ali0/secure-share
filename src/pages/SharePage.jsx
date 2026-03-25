@@ -221,8 +221,6 @@ export default function SharePage() {
         )
     }
 
-    const fileSize = formatFileSize(metadata.file_size)
-    const fileExt = metadata.original_name.split('.').pop()?.toUpperCase() || 'FILE'
     const shareUrl = window.location.href
 
     if (requiresPassword) {
@@ -302,6 +300,9 @@ export default function SharePage() {
             </div>
         )
     }
+
+    const fileSize = formatFileSize(metadata.file_size)
+    const fileExt = metadata.original_name.split('.').pop()?.toUpperCase() || 'FILE'
 
     return (
         <div className="min-h-screen bg-surface relative overflow-hidden">

@@ -8,6 +8,7 @@ function App() {
             <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/share/:fileId" element={<SharePage />} />
+                <Route path="/s/:shortId" element={<SharePage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
         </BrowserRouter>

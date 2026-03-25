@@ -78,11 +78,14 @@ export default function HomePage() {
                 throw new Error(errData.message || 'Failed to save file metadata')
             }
 
+            const metadataResult = await metadataResponse.json()
+
             setUploadStatus('Complete!')
             setUploadProgress(100)
 
             const baseUrl = window.location.origin
-            const url = `${baseUrl}/share/${fileId}#key=${uploadResult.keyHex}&iv=${uploadResult.ivHex}`
+            const sharePath = metadataResult.shortId ? `/s/${metadataResult.shortId}` : `/share/${fileId}`
+            const url = `${baseUrl}${sharePath}#key=${uploadResult.keyHex}&iv=${uploadResult.ivHex}`
             setShareUrl(url)
 
         } catch (error) {

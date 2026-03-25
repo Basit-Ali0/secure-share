@@ -22,6 +22,9 @@ import {
 dotenv.config()
 
 const app = express()
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const SHORT_ID_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+const SHORT_ID_LENGTH = 8
 
 // Middleware
 app.use(cors({
@@ -40,6 +43,76 @@ const supabase = createClient(
     process.env.VITE_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_KEY
 )
+
+function isUuid(value) {
+    return UUID_REGEX.test(value)
+}
+
+function generateShortId(length = SHORT_ID_LENGTH) {
+    const randomBytes = crypto.randomBytes(length)
+    let shortId = ''
+
+    for (let i = 0; i < length; i++) {
+        shortId += SHORT_ID_ALPHABET[randomBytes[i] % SHORT_ID_ALPHABET.length]
+    }
+
+    return shortId
+}
+
+async function createUniqueShortId(maxAttempts = 5) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const shortId = generateShortId()
+        const { data, error } = await supabase
+            .from('files')
+            .select('short_id')
+            .eq('short_id', shortId)
+            .maybeSingle()
+
+        if (error) {
+            throw new Error(`Failed to validate short ID uniqueness: ${error.message}`)
+        }
+
+        if (!data) {
+            return shortId
+        }
+    }
+
+    throw new Error('Failed to generate a unique short ID')
+}
+
+async function insertFileMetadataWithShortId(fileRecord, maxAttempts = 5) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const shortId = await createUniqueShortId()
+        const { error } = await supabase.from('files').insert({
+            ...fileRecord,
+            short_id: shortId
+        })
+
+        if (!error) {
+            return shortId
+        }
+
+        if (error.code === '23505' && error.message?.includes('short_id')) {
+            continue
+        }
+
+        throw new Error(`Failed to save metadata: ${error.message}`)
+    }
+
+    throw new Error('Failed to save metadata after retrying short ID generation')
+}
+
+async function findFileByIdentifier(identifier, selectClause = '*') {
+    const column = isUuid(identifier) ? 'file_id' : 'short_id'
+
+    const { data, error } = await supabase
+        .from('files')
+        .select(selectClause)
+        .eq(column, identifier)
+        .single()
+
+    return { data, error }
+}
 
 // ============================================
 // Health Check
@@ -207,7 +280,7 @@ app.post('/api/files/metadata', async (req, res) => {
             expiresAt
         } = req.body
 
-        const { error } = await supabase.from('files').insert({
+        const shortId = await insertFileMetadataWithShortId({
             file_id: fileId,
             original_name: originalName,
             file_type: fileType,
@@ -219,11 +292,7 @@ app.post('/api/files/metadata', async (req, res) => {
             expires_at: expiresAt
         })
 
-        if (error) {
-            throw new Error(`Failed to save metadata: ${error.message}`)
-        }
-
-        res.json({ success: true })
+        res.json({ success: true, fileId, shortId })
 
     } catch (error) {
         console.error('[Metadata Save] Error:', error)
@@ -234,17 +303,13 @@ app.post('/api/files/metadata', async (req, res) => {
 
 /**
  * Get file metadata
- * GET /api/files/:fileId
+ * GET /api/files/:identifier
  */
-app.get('/api/files/:fileId', async (req, res) => {
+app.get('/api/files/:identifier', async (req, res) => {
     try {
-        const { fileId } = req.params
+        const { identifier } = req.params
 
-        const { data: metadata, error } = await supabase
-            .from('files')
-            .select('*')
-            .eq('file_id', fileId)
-            .single()
+        const { data: metadata, error } = await findFileByIdentifier(identifier)
 
         if (error || !metadata) {
             return res.status(404).json({ message: 'File not found' })
@@ -265,14 +330,19 @@ app.get('/api/files/:fileId', async (req, res) => {
 
 /**
  * Increment download count (call after successful download)
- * POST /api/files/:fileId/downloaded
+ * POST /api/files/:identifier/downloaded
  */
-app.post('/api/files/:fileId/downloaded', async (req, res) => {
+app.post('/api/files/:identifier/downloaded', async (req, res) => {
     try {
-        const { fileId } = req.params
+        const { identifier } = req.params
+        const { data: file, error } = await findFileByIdentifier(identifier, 'file_id')
+
+        if (error || !file) {
+            return res.status(404).json({ message: 'File not found' })
+        }
 
         await supabase.rpc('increment_download_count', {
-            file_id_param: fileId
+            file_id_param: file.file_id
         })
 
         res.json({ success: true })

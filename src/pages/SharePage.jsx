@@ -5,8 +5,9 @@ import { downloadAndDecryptStreaming, terminateWorkerPool } from '../utils/strea
 import QRCode from '../components/SharePage/QRCode'
 
 export default function SharePage() {
-    const { fileId } = useParams()
+    const { fileId, shortId } = useParams()
     const navigate = useNavigate()
+    const identifier = shortId || fileId
 
     const [metadata, setMetadata] = useState(null)
     const [loading, setLoading] = useState(true)
@@ -20,7 +21,7 @@ export default function SharePage() {
 
     useEffect(() => {
         loadFileMetadata()
-    }, [fileId])
+    }, [identifier])
 
     // Live expiry countdown
     useEffect(() => {
@@ -52,7 +53,7 @@ export default function SharePage() {
     async function loadFileMetadata() {
         try {
             setLoading(true)
-            const response = await fetch(`/api/files/${fileId}`)
+            const response = await fetch(`/api/files/${identifier}`)
             if (!response.ok) {
                 let message = `Request failed with status ${response.status}`
                 try {
@@ -100,7 +101,7 @@ export default function SharePage() {
             )
 
             // Increment download count on server (only on actual download)
-            fetch(`/api/files/${fileId}/downloaded`, { method: 'POST' }).catch(() => { })
+            fetch(`/api/files/${metadata.file_id || identifier}/downloaded`, { method: 'POST' }).catch(() => { })
 
             setTimeout(() => {
                 setDownloading(false)

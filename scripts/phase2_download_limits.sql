@@ -15,7 +15,7 @@ begin
 end
 $$;
 
-create or replace function public.authorize_download(file_id_param uuid)
+create or replace function public.authorize_download(file_id_param text)
 returns table (
     download_count integer,
     max_downloads integer,

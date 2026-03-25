@@ -6,6 +6,7 @@
 import express from 'express'
 import cors from 'cors'
 import crypto from 'crypto'
+import bcrypt from 'bcrypt'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { createClient } from '@supabase/supabase-js'
@@ -125,11 +126,48 @@ function getRemainingDownloads(file) {
 }
 
 function formatMetadataResponse(file) {
-    return {
+    const baseResponse = {
+        file_id: file.file_id,
+        short_id: file.short_id,
+        original_name: file.original_name,
+        file_type: file.file_type,
+        file_size: file.file_size,
+        storage_path: file.storage_path,
+        storage_backend: file.storage_backend,
+        chunk_count: file.chunk_count,
+        chunk_sizes: file.chunk_sizes,
+        expires_at: file.expires_at,
+        created_at: file.created_at,
+        download_count: file.download_count,
+        max_downloads: file.max_downloads,
         ...file,
         remaining_downloads: getRemainingDownloads(file),
+        is_download_limited: file.max_downloads != null,
+        is_password_protected: Boolean(file.password_hash)
+    }
+
+    delete baseResponse.password_hash
+    return baseResponse
+}
+
+function formatProtectedMetadataResponse(file) {
+    return {
+        file_id: file.file_id,
+        short_id: file.short_id,
+        expires_at: file.expires_at,
+        created_at: file.created_at,
+        is_password_protected: true,
         is_download_limited: file.max_downloads != null
     }
+}
+
+function normalizeOptionalPassword(password) {
+    if (typeof password !== 'string') {
+        return null
+    }
+
+    const normalizedPassword = password.trim()
+    return normalizedPassword.length > 0 ? normalizedPassword : null
 }
 
 function scheduleExhaustedFileDeletion(file) {
@@ -306,8 +344,14 @@ app.post('/api/files/metadata', async (req, res) => {
             chunkCount,
             chunkSizes,
             expiresAt,
-            maxDownloads
+            maxDownloads,
+            password
         } = req.body
+
+        const normalizedPassword = normalizeOptionalPassword(password)
+        const passwordHash = normalizedPassword
+            ? await bcrypt.hash(normalizedPassword, 10)
+            : null
 
         const shortId = await insertFileMetadataWithShortId({
             file_id: fileId,
@@ -319,7 +363,8 @@ app.post('/api/files/metadata', async (req, res) => {
             chunk_count: chunkCount || 1,
             chunk_sizes: chunkSizes || null,
             expires_at: expiresAt,
-            max_downloads: maxDownloads ?? null
+            max_downloads: maxDownloads ?? null,
+            password_hash: passwordHash
         })
 
         res.json({ success: true, fileId, shortId })
@@ -350,10 +395,52 @@ app.get('/api/files/:identifier', async (req, res) => {
             return res.status(410).json({ message: 'File has expired' })
         }
 
+        if (metadata.password_hash) {
+            return res.json(formatProtectedMetadataResponse(metadata))
+        }
+
         res.json(formatMetadataResponse(metadata))
 
     } catch (error) {
         console.error('[Metadata Get] Error:', error)
+        res.status(500).json({ message: error.message })
+    }
+})
+
+/**
+ * Verify password and return full metadata for a protected file.
+ * POST /api/files/:identifier/unlock
+ */
+app.post('/api/files/:identifier/unlock', async (req, res) => {
+    try {
+        const { identifier } = req.params
+        const submittedPassword = normalizeOptionalPassword(req.body?.password)
+        const { data: file, error } = await findFileByIdentifier(identifier)
+
+        if (error || !file) {
+            return res.status(404).json({ message: 'File not found' })
+        }
+
+        if (new Date(file.expires_at) < new Date()) {
+            return res.status(410).json({ message: 'File has expired' })
+        }
+
+        if (!file.password_hash) {
+            return res.json(formatMetadataResponse(file))
+        }
+
+        if (!submittedPassword) {
+            return res.status(400).json({ message: 'Password is required' })
+        }
+
+        const passwordMatches = await bcrypt.compare(submittedPassword, file.password_hash)
+        if (!passwordMatches) {
+            return res.status(401).json({ message: 'Invalid password' })
+        }
+
+        res.json(formatMetadataResponse(file))
+    } catch (error) {
+        console.error('[Unlock File] Error:', error)
         res.status(500).json({ message: error.message })
     }
 })
@@ -367,7 +454,7 @@ app.post('/api/files/:identifier/authorize-download', async (req, res) => {
         const { identifier } = req.params
         const { data: file, error } = await findFileByIdentifier(
             identifier,
-            'file_id, short_id, storage_path, storage_backend, expires_at, download_count, max_downloads'
+            'file_id, short_id, storage_path, storage_backend, expires_at, download_count, max_downloads, password_hash'
         )
 
         if (error || !file) {
@@ -376,6 +463,18 @@ app.post('/api/files/:identifier/authorize-download', async (req, res) => {
 
         if (new Date(file.expires_at) < new Date()) {
             return res.status(410).json({ message: 'File has expired' })
+        }
+
+        const submittedPassword = normalizeOptionalPassword(req.body?.password)
+        if (file.password_hash) {
+            if (!submittedPassword) {
+                return res.status(401).json({ message: 'Password is required' })
+            }
+
+            const passwordMatches = await bcrypt.compare(submittedPassword, file.password_hash)
+            if (!passwordMatches) {
+                return res.status(401).json({ message: 'Invalid password' })
+            }
         }
 
         const { data: reservation, error: reservationError } = await supabase.rpc('authorize_download', {

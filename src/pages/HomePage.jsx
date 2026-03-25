@@ -19,6 +19,8 @@ export default function HomePage() {
     const [showQR, setShowQR] = useState(false)
     const [selectedExpiry, setSelectedExpiry] = useState(EXPIRY_OPTIONS[2])
     const [maxDownloadsInput, setMaxDownloadsInput] = useState('')
+    const [passwordInput, setPasswordInput] = useState('')
+    const [confirmPasswordInput, setConfirmPasswordInput] = useState('')
 
     const handleFileSelect = (file) => {
         setSelectedFile(file)
@@ -34,9 +36,19 @@ export default function HomePage() {
             const maxDownloads = trimmedMaxDownloads
                 ? Number.parseInt(trimmedMaxDownloads, 10)
                 : null
+            const normalizedPassword = passwordInput.trim()
+            const normalizedConfirmPassword = confirmPasswordInput.trim()
 
             if (trimmedMaxDownloads && (!Number.isInteger(maxDownloads) || maxDownloads <= 0)) {
                 throw new Error('Download limit must be a whole number greater than 0')
+            }
+
+            if (normalizedPassword && normalizedPassword.length < 4) {
+                throw new Error('Password must be at least 4 characters long')
+            }
+
+            if (normalizedPassword !== normalizedConfirmPassword) {
+                throw new Error('Password confirmation does not match')
             }
 
             setUploading(true)
@@ -80,7 +92,8 @@ export default function HomePage() {
                     chunkCount: uploadResult.totalChunks,
                     chunkSizes: uploadResult.chunkSizes || null,
                     expiresAt: expiresAt.toISOString(),
-                    maxDownloads
+                    maxDownloads,
+                    password: normalizedPassword || null
                 })
             })
 
@@ -202,6 +215,42 @@ export default function HomePage() {
                                                 />
                                                 <p className="mt-2 text-[11px] text-on-surface-variant">
                                                     Each authorized download consumes one view.
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <div className="flex items-center gap-2 text-sm text-white">
+                                                <span className="material-symbols-outlined text-primary text-[18px]">password</span>
+                                                <span>Password protection</span>
+                                            </div>
+                                            <div className="rounded-2xl border border-outline-variant bg-surface-container-high px-4 py-3 space-y-3">
+                                                <div>
+                                                    <label className="block text-xs uppercase tracking-wide text-on-surface-variant mb-2">
+                                                        Optional password
+                                                    </label>
+                                                    <input
+                                                        type="password"
+                                                        value={passwordInput}
+                                                        onChange={(event) => setPasswordInput(event.target.value)}
+                                                        placeholder="Leave blank for no password"
+                                                        className="w-full bg-transparent text-white placeholder:text-on-surface-variant/60 outline-none text-sm"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs uppercase tracking-wide text-on-surface-variant mb-2">
+                                                        Confirm password
+                                                    </label>
+                                                    <input
+                                                        type="password"
+                                                        value={confirmPasswordInput}
+                                                        onChange={(event) => setConfirmPasswordInput(event.target.value)}
+                                                        placeholder="Repeat password"
+                                                        className="w-full bg-transparent text-white placeholder:text-on-surface-variant/60 outline-none text-sm"
+                                                    />
+                                                </div>
+                                                <p className="text-[11px] text-on-surface-variant">
+                                                    Adds a server-side access gate before anyone can fetch the encrypted file.
                                                 </p>
                                             </div>
                                         </div>

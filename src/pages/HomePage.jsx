@@ -18,6 +18,7 @@ export default function HomePage() {
     const [showPreview, setShowPreview] = useState(false)
     const [showQR, setShowQR] = useState(false)
     const [selectedExpiry, setSelectedExpiry] = useState(EXPIRY_OPTIONS[2])
+    const [maxDownloadsInput, setMaxDownloadsInput] = useState('')
 
     const handleFileSelect = (file) => {
         setSelectedFile(file)
@@ -29,6 +30,15 @@ export default function HomePage() {
         if (!selectedFile) return
 
         try {
+            const trimmedMaxDownloads = maxDownloadsInput.trim()
+            const maxDownloads = trimmedMaxDownloads
+                ? Number.parseInt(trimmedMaxDownloads, 10)
+                : null
+
+            if (trimmedMaxDownloads && (!Number.isInteger(maxDownloads) || maxDownloads <= 0)) {
+                throw new Error('Download limit must be a whole number greater than 0')
+            }
+
             setUploading(true)
             setUploadProgress(0)
             setUploadStage('preparing')
@@ -69,7 +79,8 @@ export default function HomePage() {
                     storageBackend: 'r2',
                     chunkCount: uploadResult.totalChunks,
                     chunkSizes: uploadResult.chunkSizes || null,
-                    expiresAt: expiresAt.toISOString()
+                    expiresAt: expiresAt.toISOString(),
+                    maxDownloads
                 })
             })
 
@@ -169,6 +180,31 @@ export default function HomePage() {
 
                                         {/* Expiry Selector */}
                                         <ExpirySelector selected={selectedExpiry} onChange={setSelectedExpiry} />
+
+                                        <div className="space-y-2">
+                                            <div className="flex items-center gap-2 text-sm text-white">
+                                                <span className="material-symbols-outlined text-primary text-[18px]">download</span>
+                                                <span>Download limit</span>
+                                            </div>
+                                            <div className="rounded-2xl border border-outline-variant bg-surface-container-high px-4 py-3">
+                                                <label className="block text-xs uppercase tracking-wide text-on-surface-variant mb-2">
+                                                    Optional burn-after-reading limit
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    step="1"
+                                                    inputMode="numeric"
+                                                    value={maxDownloadsInput}
+                                                    onChange={(event) => setMaxDownloadsInput(event.target.value)}
+                                                    placeholder="Unlimited"
+                                                    className="w-full bg-transparent text-white placeholder:text-on-surface-variant/60 outline-none text-sm"
+                                                />
+                                                <p className="mt-2 text-[11px] text-on-surface-variant">
+                                                    Each authorized download consumes one view.
+                                                </p>
+                                            </div>
+                                        </div>
 
                                         {/* Preview Button */}
                                         <button

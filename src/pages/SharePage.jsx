@@ -19,6 +19,13 @@ export default function SharePage() {
     const [showQR, setShowQR] = useState(false)
     const [timeLeft, setTimeLeft] = useState(null)
 
+    const downloadCount = metadata?.download_count || 0
+    const maxDownloads = metadata?.max_downloads ?? null
+    const remainingDownloads = maxDownloads == null
+        ? null
+        : Math.max((metadata?.remaining_downloads ?? (maxDownloads - downloadCount)), 0)
+    const limitReached = maxDownloads != null && remainingDownloads <= 0
+
     useEffect(() => {
         loadFileMetadata()
     }, [identifier])
@@ -77,6 +84,7 @@ export default function SharePage() {
         try {
             setDownloading(true)
             setDownloadProgress(0)
+            setDownloadStatus('Authorizing...')
 
             const hash = window.location.hash.substring(1)
             const params = new URLSearchParams(hash)
@@ -87,8 +95,31 @@ export default function SharePage() {
                 throw new Error('Encryption keys missing from URL. Invalid share link.')
             }
 
+            const authorizeResponse = await fetch(`/api/files/${identifier}/authorize-download`, {
+                method: 'POST'
+            })
+
+            if (!authorizeResponse.ok) {
+                let message = `Request failed with status ${authorizeResponse.status}`
+                try {
+                    const data = await authorizeResponse.json()
+                    message = data.message || message
+                } catch {
+                    // Ignore non-JSON error payloads
+                }
+                throw new Error(message)
+            }
+
+            const authorization = await authorizeResponse.json()
+            setMetadata(prev => prev ? {
+                ...prev,
+                download_count: authorization.downloadCount,
+                max_downloads: authorization.maxDownloads,
+                remaining_downloads: authorization.remainingDownloads
+            } : prev)
+
             await downloadAndDecryptStreaming(
-                metadata.storage_path,
+                authorization.presignedUrl,
                 metadata.chunk_count || 1,
                 metadata.chunk_sizes || null,
                 keyHex,
@@ -100,15 +131,10 @@ export default function SharePage() {
                 }
             )
 
-            // Increment download count on server (only on actual download)
-            fetch(`/api/files/${metadata.file_id || identifier}/downloaded`, { method: 'POST' }).catch(() => { })
-
             setTimeout(() => {
                 setDownloading(false)
                 setDownloadComplete(true)
                 setDownloadProgress(0)
-                // Optimistic: update state instead of re-fetching (avoids double-increment)
-                setMetadata(prev => prev ? { ...prev, download_count: (prev.download_count || 0) + 1 } : prev)
             }, 1500)
 
         } catch (err) {
@@ -204,8 +230,19 @@ export default function SharePage() {
                     <div className="w-full flex items-center justify-center gap-3 text-[12px] text-on-surface-variant">
                         <div className="flex items-center gap-1.5 bg-surface-variant/30 border border-outline-variant/50 px-3 py-1.5 rounded-lg">
                             <span className="material-symbols-outlined text-[14px] text-primary">download</span>
-                            <span className="text-gray-300">{metadata.download_count || 0} downloads</span>
+                            <span className="text-gray-300">{downloadCount} downloads</span>
                         </div>
+                        {maxDownloads != null && (
+                            <div className={`flex items-center gap-1.5 border px-3 py-1.5 rounded-lg ${limitReached
+                                ? 'bg-red-900/20 border-red-500/30'
+                                : 'bg-surface-variant/30 border-outline-variant/50'
+                                }`}>
+                                <span className={`material-symbols-outlined text-[14px] ${limitReached ? 'text-red-400' : 'text-primary'}`}>visibility</span>
+                                <span className={limitReached ? 'text-red-400' : 'text-gray-300'}>
+                                    {remainingDownloads} of {maxDownloads} left
+                                </span>
+                            </div>
+                        )}
                         {timeLeft !== null && (
                             <div className={`flex items-center gap-1.5 border px-3 py-1.5 rounded-lg ${timeLeft <= 0
                                 ? 'bg-red-900/20 border-red-500/30'
@@ -236,10 +273,12 @@ export default function SharePage() {
 
                     {/* Download Button */}
                     <button
-                        onClick={!downloadComplete ? handleDownload : undefined}
-                        disabled={downloading}
+                        onClick={!downloadComplete && !limitReached ? handleDownload : undefined}
+                        disabled={downloading || limitReached}
                         className={`w-full h-12 rounded-full flex items-center justify-center gap-2 transition-all duration-300 font-medium tracking-wide text-[14px] border border-white/5 ${downloadComplete
                                 ? 'bg-green-600 text-white cursor-default'
+                                : limitReached
+                                    ? 'bg-red-900/40 text-red-300 cursor-not-allowed'
                                 : 'bg-primary hover:bg-primary-400 hover:shadow-purple-glow-button active:scale-[0.98] text-black'
                             }`}
                     >
@@ -252,6 +291,11 @@ export default function SharePage() {
                             <>
                                 <span className="material-symbols-outlined text-[20px] icon-filled">check_circle</span>
                                 Download Complete
+                            </>
+                        ) : limitReached ? (
+                            <>
+                                <span className="material-symbols-outlined text-[20px]">block</span>
+                                Download Limit Reached
                             </>
                         ) : (
                             <>

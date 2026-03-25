@@ -25,6 +25,8 @@ const app = express()
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const SHORT_ID_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 const SHORT_ID_LENGTH = 8
+const EXHAUSTED_FILE_DELETE_DELAY_MS = 60 * 60 * 1000
+const scheduledDeletionTimers = new Map()
 
 // Middleware
 app.use(cors({
@@ -112,6 +114,61 @@ async function findFileByIdentifier(identifier, selectClause = '*') {
         .single()
 
     return { data, error }
+}
+
+function getRemainingDownloads(file) {
+    if (file.max_downloads == null) {
+        return null
+    }
+
+    return Math.max(file.max_downloads - (file.download_count || 0), 0)
+}
+
+function formatMetadataResponse(file) {
+    return {
+        ...file,
+        remaining_downloads: getRemainingDownloads(file),
+        is_download_limited: file.max_downloads != null
+    }
+}
+
+function scheduleExhaustedFileDeletion(file) {
+    if (!file?.file_id || scheduledDeletionTimers.has(file.file_id)) {
+        return
+    }
+
+    const timer = setTimeout(async () => {
+        try {
+            if (file.storage_backend === 'r2') {
+                await deleteObject(file.storage_path)
+            } else {
+                await supabase.storage
+                    .from('encrypted-files')
+                    .remove([file.storage_path])
+            }
+
+            const { error } = await supabase
+                .from('files')
+                .delete()
+                .eq('file_id', file.file_id)
+
+            if (error) {
+                throw new Error(error.message)
+            }
+
+            console.log(`[Download Limit] Deleted exhausted file ${file.file_id}`)
+        } catch (error) {
+            console.error(`[Download Limit] Failed to delete exhausted file ${file.file_id}:`, error)
+        } finally {
+            scheduledDeletionTimers.delete(file.file_id)
+        }
+    }, EXHAUSTED_FILE_DELETE_DELAY_MS)
+
+    if (typeof timer.unref === 'function') {
+        timer.unref()
+    }
+
+    scheduledDeletionTimers.set(file.file_id, timer)
 }
 
 // ============================================
@@ -222,40 +279,11 @@ app.post('/api/r2/complete', async (req, res) => {
 })
 
 /**
- * Get presigned download URL
- * GET /api/r2/download/:objectKey
+ * Legacy direct download endpoint
+ * Public clients should use POST /api/files/:identifier/authorize-download instead
  */
 app.get('/api/r2/download/*', async (req, res) => {
-    try {
-        const objectKey = req.params[0]
-
-        if (!objectKey) {
-            return res.status(400).json({ message: 'objectKey required' })
-        }
-
-        // P1: Enforce expiry check before signing download URL
-        const { data: file, error: dbError } = await supabase
-            .from('files')
-            .select('expires_at')
-            .eq('storage_path', objectKey)
-            .single()
-
-        if (dbError || !file) {
-            return res.status(404).json({ message: 'File not found' })
-        }
-
-        if (new Date(file.expires_at) < new Date()) {
-            return res.status(410).json({ message: 'File has expired' })
-        }
-
-        const result = await getPresignedDownloadUrl(objectKey)
-
-        res.json(result)
-
-    } catch (error) {
-        console.error('[R2 Download] Error:', error)
-        res.status(500).json({ message: error.message })
-    }
+    res.status(410).json({ message: 'Direct downloads are disabled. Authorize downloads via /api/files/:identifier/authorize-download.' })
 })
 
 // ============================================
@@ -277,7 +305,8 @@ app.post('/api/files/metadata', async (req, res) => {
             storageBackend,
             chunkCount,
             chunkSizes,
-            expiresAt
+            expiresAt,
+            maxDownloads
         } = req.body
 
         const shortId = await insertFileMetadataWithShortId({
@@ -289,7 +318,8 @@ app.post('/api/files/metadata', async (req, res) => {
             storage_backend: storageBackend || 'r2',
             chunk_count: chunkCount || 1,
             chunk_sizes: chunkSizes || null,
-            expires_at: expiresAt
+            expires_at: expiresAt,
+            max_downloads: maxDownloads ?? null
         })
 
         res.json({ success: true, fileId, shortId })
@@ -320,7 +350,7 @@ app.get('/api/files/:identifier', async (req, res) => {
             return res.status(410).json({ message: 'File has expired' })
         }
 
-        res.json(metadata)
+        res.json(formatMetadataResponse(metadata))
 
     } catch (error) {
         console.error('[Metadata Get] Error:', error)
@@ -329,26 +359,63 @@ app.get('/api/files/:identifier', async (req, res) => {
 })
 
 /**
- * Increment download count (call after successful download)
- * POST /api/files/:identifier/downloaded
+ * Authorize a download and atomically reserve a download slot.
+ * POST /api/files/:identifier/authorize-download
  */
-app.post('/api/files/:identifier/downloaded', async (req, res) => {
+app.post('/api/files/:identifier/authorize-download', async (req, res) => {
     try {
         const { identifier } = req.params
-        const { data: file, error } = await findFileByIdentifier(identifier, 'file_id')
+        const { data: file, error } = await findFileByIdentifier(
+            identifier,
+            'file_id, short_id, storage_path, storage_backend, expires_at, download_count, max_downloads'
+        )
 
         if (error || !file) {
             return res.status(404).json({ message: 'File not found' })
         }
 
-        await supabase.rpc('increment_download_count', {
+        if (new Date(file.expires_at) < new Date()) {
+            return res.status(410).json({ message: 'File has expired' })
+        }
+
+        const { data: reservation, error: reservationError } = await supabase.rpc('authorize_download', {
             file_id_param: file.file_id
         })
 
-        res.json({ success: true })
+        if (reservationError) {
+            throw new Error(`Failed to authorize download: ${reservationError.message}`)
+        }
+
+        if (!reservation || reservation.length === 0) {
+            return res.status(410).json({ message: 'Download limit reached' })
+        }
+
+        const reservationResult = reservation[0]
+        const updatedFile = {
+            ...file,
+            download_count: reservationResult.download_count,
+            max_downloads: reservationResult.max_downloads
+        }
+
+        const { presignedUrl } = await getPresignedDownloadUrl(file.storage_path)
+
+        if (reservationResult.exhausted) {
+            scheduleExhaustedFileDeletion(updatedFile)
+        }
+
+        res.json({
+            success: true,
+            fileId: file.file_id,
+            shortId: file.short_id,
+            presignedUrl,
+            downloadCount: reservationResult.download_count,
+            maxDownloads: reservationResult.max_downloads,
+            remainingDownloads: getRemainingDownloads(updatedFile),
+            exhausted: reservationResult.exhausted
+        })
 
     } catch (error) {
-        console.error('[Download Count] Error:', error)
+        console.error('[Authorize Download] Error:', error)
         res.status(500).json({ message: error.message })
     }
 })

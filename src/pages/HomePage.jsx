@@ -18,6 +18,9 @@ export default function HomePage() {
     const [showPreview, setShowPreview] = useState(false)
     const [showQR, setShowQR] = useState(false)
     const [selectedExpiry, setSelectedExpiry] = useState(EXPIRY_OPTIONS[2])
+    const [maxDownloadsInput, setMaxDownloadsInput] = useState('')
+    const [passwordInput, setPasswordInput] = useState('')
+    const [confirmPasswordInput, setConfirmPasswordInput] = useState('')
 
     const handleFileSelect = (file) => {
         setSelectedFile(file)
@@ -29,6 +32,24 @@ export default function HomePage() {
         if (!selectedFile) return
 
         try {
+            const trimmedMaxDownloads = maxDownloadsInput.trim()
+            const hasDownloadLimit = trimmedMaxDownloads.length > 0
+            const maxDownloads = hasDownloadLimit ? Number(trimmedMaxDownloads) : null
+            const normalizedPassword = passwordInput.trim()
+            const normalizedConfirmPassword = confirmPasswordInput.trim()
+
+            if (hasDownloadLimit && !/^[1-9]\d*$/.test(trimmedMaxDownloads)) {
+                throw new Error('Download limit must be a whole number greater than 0')
+            }
+
+            if (normalizedPassword && normalizedPassword.length < 4) {
+                throw new Error('Password must be at least 4 characters long')
+            }
+
+            if (normalizedPassword !== normalizedConfirmPassword) {
+                throw new Error('Password confirmation does not match')
+            }
+
             setUploading(true)
             setUploadProgress(0)
             setUploadStage('preparing')
@@ -69,7 +90,9 @@ export default function HomePage() {
                     storageBackend: 'r2',
                     chunkCount: uploadResult.totalChunks,
                     chunkSizes: uploadResult.chunkSizes || null,
-                    expiresAt: expiresAt.toISOString()
+                    expiresAt: expiresAt.toISOString(),
+                    maxDownloads,
+                    password: normalizedPassword || null
                 })
             })
 
@@ -78,11 +101,14 @@ export default function HomePage() {
                 throw new Error(errData.message || 'Failed to save file metadata')
             }
 
+            const metadataResult = await metadataResponse.json()
+
             setUploadStatus('Complete!')
             setUploadProgress(100)
 
             const baseUrl = window.location.origin
-            const url = `${baseUrl}/share/${fileId}#key=${uploadResult.keyHex}&iv=${uploadResult.ivHex}`
+            const sharePath = metadataResult.shortId ? `/s/${metadataResult.shortId}` : `/share/${fileId}`
+            const url = `${baseUrl}${sharePath}#key=${uploadResult.keyHex}&iv=${uploadResult.ivHex}`
             setShareUrl(url)
 
         } catch (error) {
@@ -119,7 +145,7 @@ export default function HomePage() {
             </header>
 
             {/* Main Content */}
-            <main className="relative z-10 flex flex-col items-center justify-center px-4 py-8 md:py-12">
+            <main className="relative z-10 flex flex-col items-center justify-center px-4 pt-2 md:pt-4 pb-8">
                 {/* Hero Text */}
                 <div className="text-center mb-6 md:mb-8">
                     <h1 className="text-2xl sm:text-3xl font-normal text-white mb-1">Masked Transfer</h1>
@@ -127,9 +153,9 @@ export default function HomePage() {
                 </div>
 
                 {/* Main Card */}
-                <div className="w-full max-w-[900px]">
+                <div className={`w-full transition-all duration-500 ${selectedFile ? 'max-w-[760px]' : 'max-w-[420px]'}`}>
                     {!uploading && !shareUrl && (
-                        <div className="glass-card p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 lg:gap-12 items-start card-hover">
+                        <div className={`glass-card p-4 sm:p-6 grid grid-cols-1 ${selectedFile ? 'md:grid-cols-2' : ''} gap-6 md:gap-8 items-start card-hover transition-all duration-500`}>
                             {/* Left: Upload Zone */}
                             <div className="flex flex-col gap-4">
                                 <DragDropZone onFileSelect={handleFileSelect} selectedFile={selectedFile} />
@@ -155,19 +181,82 @@ export default function HomePage() {
                             </div>
 
                             {/* Right: Security Options */}
-                            <div className="flex flex-col gap-6 h-full justify-between">
-                                <div className="space-y-6">
-                                    {/* Section Header */}
-                                    <div className="flex items-center gap-2 text-white pb-2 border-b border-outline-variant">
-                                        <span className="material-symbols-outlined text-primary">tune</span>
-                                        <h3 className="text-base font-medium">Security Options</h3>
-                                    </div>
+                            {selectedFile && (
+                                <div className="flex flex-col gap-6 h-full justify-between fade-in-up">
+                                    <div className="space-y-6">
+                                        {/* Section Header */}
+                                        <div className="flex items-center gap-2 text-white pb-2 border-b border-outline-variant">
+                                            <span className="material-symbols-outlined text-primary">tune</span>
+                                            <h3 className="text-base font-medium">Security Options</h3>
+                                        </div>
 
-                                    {/* Expiry Selector */}
-                                    <ExpirySelector selected={selectedExpiry} onChange={setSelectedExpiry} />
+                                        {/* Expiry Selector */}
+                                        <ExpirySelector selected={selectedExpiry} onChange={setSelectedExpiry} />
 
-                                    {/* Preview Button */}
-                                    {selectedFile && (
+                                        <div className="space-y-2">
+                                            <div className="flex items-center gap-2 text-sm text-white">
+                                                <span className="material-symbols-outlined text-primary text-[18px]">download</span>
+                                                <span>Download limit</span>
+                                            </div>
+                                            <div className="rounded-2xl border border-outline-variant bg-surface-container-high px-4 py-3">
+                                                <label className="block text-xs uppercase tracking-wide text-on-surface-variant mb-2">
+                                                    Optional burn-after-reading limit
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    step="1"
+                                                    inputMode="numeric"
+                                                    value={maxDownloadsInput}
+                                                    onChange={(event) => setMaxDownloadsInput(event.target.value)}
+                                                    placeholder="Unlimited"
+                                                    className="w-full bg-transparent text-white placeholder:text-on-surface-variant/60 outline-none text-sm"
+                                                />
+                                                <p className="mt-2 text-[11px] text-on-surface-variant">
+                                                    Each authorized download consumes one view.
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <div className="flex items-center gap-2 text-sm text-white">
+                                                <span className="material-symbols-outlined text-primary text-[18px]">password</span>
+                                                <span>Password protection</span>
+                                            </div>
+                                            <div className="rounded-2xl border border-outline-variant bg-surface-container-high px-4 py-3 space-y-3">
+                                                <div>
+                                                    <label className="block text-xs uppercase tracking-wide text-on-surface-variant mb-2">
+                                                        Optional password
+                                                    </label>
+                                                    <input
+                                                    type="password"
+                                                    autoComplete="new-password"
+                                                    value={passwordInput}
+                                                    onChange={(event) => setPasswordInput(event.target.value)}
+                                                    placeholder="Leave blank for no password"
+                                                        className="w-full bg-transparent text-white placeholder:text-on-surface-variant/60 outline-none text-sm"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs uppercase tracking-wide text-on-surface-variant mb-2">
+                                                        Confirm password
+                                                    </label>
+                                                    <input
+                                                    type="password"
+                                                    autoComplete="new-password"
+                                                    value={confirmPasswordInput}
+                                                    onChange={(event) => setConfirmPasswordInput(event.target.value)}
+                                                    placeholder="Repeat password"
+                                                        className="w-full bg-transparent text-white placeholder:text-on-surface-variant/60 outline-none text-sm"
+                                                    />
+                                                </div>
+                                                <p className="text-[11px] text-on-surface-variant">
+                                                    Adds a server-side access gate before anyone can fetch the encrypted file.
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* Preview Button */}
                                         <button
                                             onClick={() => setShowPreview(true)}
                                             className="w-full h-10 rounded-full border border-outline text-on-surface-variant text-sm font-medium hover:bg-white/5 transition-colors flex items-center justify-center gap-2"
@@ -175,28 +264,24 @@ export default function HomePage() {
                                             <span className="material-symbols-outlined text-lg">visibility</span>
                                             Preview File
                                         </button>
-                                    )}
-                                </div>
+                                    </div>
 
-                                {/* Upload Button */}
-                                <div className="pt-4 space-y-4">
-                                    <button
-                                        onClick={handleUpload}
-                                        disabled={!selectedFile}
-                                        className={`w-full h-12 rounded-full font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${selectedFile
-                                            ? 'bg-primary text-black hover:shadow-purple-glow-button hover:bg-primary-400'
-                                            : 'bg-surface-variant text-on-surface-variant cursor-not-allowed'
-                                            }`}
-                                    >
-                                        <span className="material-symbols-outlined icon-filled">rocket_launch</span>
-                                        Secure & Send
-                                    </button>
-                                    <div className="flex items-center justify-center gap-1.5 text-primary text-[11px] font-medium opacity-80">
-                                        <span className="material-symbols-outlined text-[14px] icon-filled">lock</span>
-                                        <span>Files encrypted before leaving device</span>
+                                    {/* Upload Button */}
+                                    <div className="pt-4 space-y-4">
+                                        <button
+                                            onClick={handleUpload}
+                                            className="w-full h-12 rounded-full font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] bg-primary text-black hover:shadow-purple-glow-button hover:bg-primary-400"
+                                        >
+                                            <span className="material-symbols-outlined icon-filled">rocket_launch</span>
+                                            Secure & Send
+                                        </button>
+                                        <div className="flex items-center justify-center gap-1.5 text-primary text-[11px] font-medium opacity-80">
+                                            <span className="material-symbols-outlined text-[14px] icon-filled">lock</span>
+                                            <span>Files encrypted before leaving device</span>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
                     )}
 
@@ -265,16 +350,41 @@ export default function HomePage() {
                         </div>
                     )}
                 </div>
-
-                {/* Footer Links */}
-                <div className="mt-8 flex gap-2 text-xs text-on-surface-variant font-medium items-center">
-                    <span>Made with</span>
-                    <span className="text-red-500 text-sm">❤️</span>
-                    <span>by Basit</span>
-                </div>
             </main>
 
-            {/* File Preview Modal */}
+            {/* Fixed Social Links - Bottom Right Corner */}
+            <div className="fixed right-4 bottom-4 z-30 flex items-center gap-2 bg-surface/50 backdrop-blur-md px-3 py-2 rounded-full border border-outline-variant/30">
+                <a
+                    href="https://github.com/Basit-Ali0"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-on-surface-variant hover:text-white transition-colors hover:scale-110"
+                    title="GitHub"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                        <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
+                    </svg>
+                </a>
+                <div className="w-px h-3 bg-outline-variant/50 mx-1" />
+                <a
+                    href="https://x.com/BasitAli"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-on-surface-variant hover:text-white transition-colors hover:scale-110"
+                    title="X (Twitter)"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                    </svg>
+                </a>
+            </div>
+
+            {/* Page Footer */}
+            <footer className="relative z-10 w-full text-center pb-4 text-[11px] text-on-surface-variant/50 flex items-center justify-center gap-1.5">
+                <span>Made with</span>
+                <span className="text-red-500">❤️</span>
+                <span>by Basit</span>
+            </footer>
             {showPreview && (
                 <FilePreviewModal file={selectedFile} onClose={() => setShowPreview(false)} />
             )}

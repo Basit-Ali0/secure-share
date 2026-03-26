@@ -5,21 +5,35 @@ import { downloadAndDecryptStreaming, terminateWorkerPool } from '../utils/strea
 import QRCode from '../components/SharePage/QRCode'
 
 export default function SharePage() {
-    const { fileId } = useParams()
+    const { fileId, shortId } = useParams()
     const navigate = useNavigate()
+    const identifier = shortId || fileId
 
     const [metadata, setMetadata] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
     const [downloading, setDownloading] = useState(false)
+    const [downloadComplete, setDownloadComplete] = useState(false)
     const [downloadProgress, setDownloadProgress] = useState(0)
     const [downloadStatus, setDownloadStatus] = useState('')
     const [showQR, setShowQR] = useState(false)
     const [timeLeft, setTimeLeft] = useState(null)
+    const [passwordInput, setPasswordInput] = useState('')
+    const [unlocking, setUnlocking] = useState(false)
+    const [unlockError, setUnlockError] = useState('')
+    const [isUnlocked, setIsUnlocked] = useState(false)
+
+    const downloadCount = metadata?.download_count || 0
+    const maxDownloads = metadata?.max_downloads ?? null
+    const remainingDownloads = maxDownloads == null
+        ? null
+        : Math.max((metadata?.remaining_downloads ?? (maxDownloads - downloadCount)), 0)
+    const limitReached = maxDownloads != null && remainingDownloads <= 0
+    const requiresPassword = Boolean(metadata?.is_password_protected) && !isUnlocked
 
     useEffect(() => {
         loadFileMetadata()
-    }, [fileId])
+    }, [identifier])
 
     // Live expiry countdown
     useEffect(() => {
@@ -51,7 +65,7 @@ export default function SharePage() {
     async function loadFileMetadata() {
         try {
             setLoading(true)
-            const response = await fetch(`/api/files/${fileId}`)
+            const response = await fetch(`/api/files/${identifier}`)
             if (!response.ok) {
                 let message = `Request failed with status ${response.status}`
                 try {
@@ -64,6 +78,7 @@ export default function SharePage() {
             }
             const data = await response.json()
             setMetadata(data)
+            setIsUnlocked(!data.is_password_protected)
         } catch (err) {
             setError(err.message)
         } finally {
@@ -71,10 +86,46 @@ export default function SharePage() {
         }
     }
 
+    async function handleUnlock(event) {
+        event?.preventDefault()
+
+        try {
+            setUnlocking(true)
+            setUnlockError('')
+
+            const response = await fetch(`/api/files/${identifier}/unlock`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: passwordInput })
+            })
+
+            if (!response.ok) {
+                let message = `Request failed with status ${response.status}`
+                try {
+                    const data = await response.json()
+                    message = data.message || message
+                } catch {
+                    // Ignore non-JSON error payloads
+                }
+                throw new Error(message)
+            }
+
+            const data = await response.json()
+            setMetadata(data)
+            setIsUnlocked(true)
+        } catch (err) {
+            setUnlockError(err.message)
+        } finally {
+            setUnlocking(false)
+        }
+    }
+
     async function handleDownload() {
         try {
             setDownloading(true)
             setDownloadProgress(0)
+            setDownloadStatus('Authorizing...')
+            setDownloadComplete(false)
 
             const hash = window.location.hash.substring(1)
             const params = new URLSearchParams(hash)
@@ -85,8 +136,52 @@ export default function SharePage() {
                 throw new Error('Encryption keys missing from URL. Invalid share link.')
             }
 
+            if (requiresPassword) {
+                throw new Error('Unlock the file before downloading.')
+            }
+
+            const hasChunkCount = Number.isInteger(metadata?.chunk_count) && metadata.chunk_count > 0
+            const hasChunkSizes = metadata?.chunk_count === 1 || Array.isArray(metadata?.chunk_sizes)
+            const hasFileName = typeof metadata?.original_name === 'string' && metadata.original_name.length > 0
+
+            if (!metadata || !hasChunkCount || !hasChunkSizes || !hasFileName) {
+                throw new Error('File metadata is incomplete. Refresh the page or unlock the file again.')
+            }
+
+            const authorizeResponse = await fetch(`/api/files/${identifier}/authorize-download`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: passwordInput })
+            })
+
+            if (!authorizeResponse.ok) {
+                let message = `Request failed with status ${authorizeResponse.status}`
+                try {
+                    const data = await authorizeResponse.json()
+                    message = data.message || message
+                    if (authorizeResponse.status === 410 && data.message === 'Download limit reached') {
+                        setMetadata(prev => prev ? {
+                            ...prev,
+                            download_count: prev.max_downloads ?? prev.download_count ?? 0,
+                            remaining_downloads: 0
+                        } : prev)
+                    }
+                } catch {
+                    // Ignore non-JSON error payloads
+                }
+                throw new Error(message)
+            }
+
+            const authorization = await authorizeResponse.json()
+            setMetadata(prev => prev ? {
+                ...prev,
+                download_count: authorization.downloadCount,
+                max_downloads: authorization.maxDownloads,
+                remaining_downloads: authorization.remainingDownloads
+            } : prev)
+
             await downloadAndDecryptStreaming(
-                metadata.storage_path,
+                authorization.presignedUrl,
                 metadata.chunk_count || 1,
                 metadata.chunk_sizes || null,
                 keyHex,
@@ -98,14 +193,10 @@ export default function SharePage() {
                 }
             )
 
-            // Increment download count on server (only on actual download)
-            fetch(`/api/files/${fileId}/downloaded`, { method: 'POST' }).catch(() => { })
-
             setTimeout(() => {
                 setDownloading(false)
+                setDownloadComplete(true)
                 setDownloadProgress(0)
-                // Optimistic: update state instead of re-fetching (avoids double-increment)
-                setMetadata(prev => prev ? { ...prev, download_count: (prev.download_count || 0) + 1 } : prev)
             }, 1500)
 
         } catch (err) {
@@ -152,9 +243,91 @@ export default function SharePage() {
         )
     }
 
+    const shareUrl = window.location.href
+
+    if (requiresPassword) {
+        return (
+            <div className="min-h-screen bg-surface relative overflow-hidden">
+                <div className="ambient-glow" />
+                <header className="relative z-20 flex items-center gap-3 px-4 py-4 md:px-6">
+                    <span className="material-symbols-outlined text-primary text-3xl icon-filled">shield_lock</span>
+                    <span className="text-xl font-normal tracking-tight text-white">MaskedFile</span>
+                </header>
+                <main className="relative z-10 flex flex-col items-center justify-center px-4 py-8 md:py-16">
+                    <div className="w-full max-w-[420px] glass-card p-6 md:p-8 text-center space-y-6">
+                        <div className="w-16 h-16 bg-primary-container rounded-full flex items-center justify-center mx-auto">
+                            <span className="material-symbols-outlined text-3xl text-primary icon-filled">lock</span>
+                        </div>
+
+                        <div className="space-y-2">
+                            <h1 className="text-2xl font-medium text-white">Protected Share Link</h1>
+                            <p className="text-sm text-on-surface-variant">
+                                Enter the password to reveal the file details and authorize downloads.
+                            </p>
+                        </div>
+
+                        {timeLeft !== null && (
+                            <div className={`inline-flex items-center gap-1.5 border px-3 py-1.5 rounded-lg ${timeLeft <= 0
+                                ? 'bg-red-900/20 border-red-500/30'
+                                : timeLeft < 3600000
+                                    ? 'bg-amber-900/20 border-amber-500/30'
+                                    : 'bg-surface-variant/30 border-outline-variant/50'
+                                }`}>
+                                <span className={`material-symbols-outlined text-[14px] ${timeLeft <= 0 ? 'text-red-400' : timeLeft < 3600000 ? 'text-amber-400' : 'text-primary'
+                                    }`}>schedule</span>
+                                <span className={timeLeft <= 0 ? 'text-red-400' : timeLeft < 3600000 ? 'text-amber-400' : 'text-gray-300'}>
+                                    {formatTimeLeft(timeLeft)}
+                                </span>
+                            </div>
+                        )}
+
+                        <form onSubmit={handleUnlock} className="space-y-4">
+                            <div className="rounded-2xl border border-outline-variant bg-surface-container-high px-4 py-3 text-left">
+                                <label className="block text-xs uppercase tracking-wide text-on-surface-variant mb-2">
+                                    Password
+                                </label>
+                                <input
+                                    type="password"
+                                    autoComplete="current-password"
+                                    value={passwordInput}
+                                    onChange={(event) => setPasswordInput(event.target.value)}
+                                    placeholder="Enter password"
+                                    className="w-full bg-transparent text-white placeholder:text-on-surface-variant/60 outline-none text-sm"
+                                />
+                            </div>
+
+                            {unlockError && (
+                                <div className="text-sm text-red-400">
+                                    {unlockError}
+                                </div>
+                            )}
+
+                            <button
+                                type="submit"
+                                disabled={unlocking}
+                                className="w-full h-12 rounded-full flex items-center justify-center gap-2 transition-all duration-300 font-medium tracking-wide text-[14px] border border-white/5 bg-primary hover:bg-primary-400 hover:shadow-purple-glow-button active:scale-[0.98] text-black disabled:opacity-70"
+                            >
+                                {unlocking ? (
+                                    <>
+                                        <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                                        Unlocking...
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="material-symbols-outlined text-[20px]">lock_open</span>
+                                        Unlock File
+                                    </>
+                                )}
+                            </button>
+                        </form>
+                    </div>
+                </main>
+            </div>
+        )
+    }
+
     const fileSize = formatFileSize(metadata.file_size)
     const fileExt = metadata.original_name.split('.').pop()?.toUpperCase() || 'FILE'
-    const shareUrl = window.location.href
 
     return (
         <div className="min-h-screen bg-surface relative overflow-hidden">
@@ -201,8 +374,19 @@ export default function SharePage() {
                     <div className="w-full flex items-center justify-center gap-3 text-[12px] text-on-surface-variant">
                         <div className="flex items-center gap-1.5 bg-surface-variant/30 border border-outline-variant/50 px-3 py-1.5 rounded-lg">
                             <span className="material-symbols-outlined text-[14px] text-primary">download</span>
-                            <span className="text-gray-300">{metadata.download_count || 0} downloads</span>
+                            <span className="text-gray-300">{downloadCount} downloads</span>
                         </div>
+                        {maxDownloads != null && (
+                            <div className={`flex items-center gap-1.5 border px-3 py-1.5 rounded-lg ${limitReached
+                                ? 'bg-red-900/20 border-red-500/30'
+                                : 'bg-surface-variant/30 border-outline-variant/50'
+                                }`}>
+                                <span className={`material-symbols-outlined text-[14px] ${limitReached ? 'text-red-400' : 'text-primary'}`}>visibility</span>
+                                <span className={limitReached ? 'text-red-400' : 'text-gray-300'}>
+                                    {remainingDownloads} of {maxDownloads} left
+                                </span>
+                            </div>
+                        )}
                         {timeLeft !== null && (
                             <div className={`flex items-center gap-1.5 border px-3 py-1.5 rounded-lg ${timeLeft <= 0
                                 ? 'bg-red-900/20 border-red-500/30'
@@ -233,14 +417,29 @@ export default function SharePage() {
 
                     {/* Download Button */}
                     <button
-                        onClick={handleDownload}
-                        disabled={downloading}
-                        className="w-full h-12 bg-primary hover:bg-primary-400 hover:shadow-purple-glow-button active:scale-[0.98] text-black rounded-full flex items-center justify-center gap-2 transition-all duration-200 font-medium tracking-wide text-[14px] border border-white/5"
+                        onClick={!limitReached ? handleDownload : undefined}
+                        disabled={downloading || limitReached}
+                        className={`w-full h-12 rounded-full flex items-center justify-center gap-2 transition-all duration-300 font-medium tracking-wide text-[14px] border border-white/5 ${limitReached
+                                ? 'bg-red-900/40 text-red-300 cursor-not-allowed'
+                                : downloadComplete
+                                    ? 'bg-green-600 text-white'
+                                    : 'bg-primary hover:bg-primary-400 hover:shadow-purple-glow-button active:scale-[0.98] text-black'
+                            }`}
                     >
                         {downloading ? (
                             <>
                                 <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
                                 {downloadStatus} ({Math.round(downloadProgress)}%)
+                            </>
+                        ) : limitReached ? (
+                            <>
+                                <span className="material-symbols-outlined text-[20px]">block</span>
+                                Download Limit Reached
+                            </>
+                        ) : downloadComplete ? (
+                            <>
+                                <span className="material-symbols-outlined text-[20px]">download</span>
+                                Download Again
                             </>
                         ) : (
                             <>

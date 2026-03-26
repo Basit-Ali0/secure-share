@@ -171,7 +171,7 @@ export async function encryptAndUploadStreaming(file, fileId, onProgress = () =>
  * Downloads one chunk at a time via Range requests → decrypts → writes to disk
  * Peak memory: ~200MB (1-2 chunks) instead of entire file
  *
- * @param {string} objectKey - R2 object key
+ * @param {string} downloadSource - Presigned download URL
  * @param {number} totalChunks - Number of chunks
  * @param {number[]|null} chunkSizes - Size of each stored chunk (encrypted + auth tag)
  * @param {string} keyHex - Encryption key (hex)
@@ -180,7 +180,7 @@ export async function encryptAndUploadStreaming(file, fileId, onProgress = () =>
  * @param {Function} onProgress - Progress callback (percent, statusText)
  */
 export async function downloadAndDecryptStreaming(
-    objectKey, totalChunks, chunkSizes, keyHex, ivHex, fileName, onProgress = () => { }
+    downloadSource, totalChunks, chunkSizes, keyHex, ivHex, fileName, onProgress = () => { }
 ) {
     const key = new Uint8Array(hexToArrayBuffer(keyHex))
     const iv = new Uint8Array(hexToArrayBuffer(ivHex))
@@ -188,14 +188,12 @@ export async function downloadAndDecryptStreaming(
     const pool = getWorkerPool()
     await pool.init()
 
-    onProgress(2, 'Getting download URL...')
+    onProgress(2, 'Authorizing download...')
 
-    // Get presigned download URL
-    const urlResponse = await fetch(`/api/r2/download/${encodeURIComponent(objectKey)}`)
-    if (!urlResponse.ok) {
-        throw new Error('Failed to get download URL')
+    if (typeof downloadSource !== 'string' || !/^https?:\/\//i.test(downloadSource)) {
+        throw new Error('Download source must be a presigned URL')
     }
-    const { presignedUrl } = await urlResponse.json()
+    const presignedUrl = downloadSource
 
     // Multi-chunk file missing chunkSizes — cannot proceed
     if (totalChunks > 1 && !chunkSizes) {

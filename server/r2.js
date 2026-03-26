@@ -10,41 +10,35 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import dotenv from 'dotenv'
 
-// Load environment variables
 dotenv.config()
 
-// Validate required R2 environment variables
-const requiredR2Vars = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']
-const missingVars = requiredR2Vars.filter(v => !process.env[v])
-if (missingVars.length > 0) {
-    console.error(`❌ Missing required R2 env vars: ${missingVars.join(', ')}`)
-    process.exit(1)
-}
-
-// R2 Client configuration
-const r2Client = new S3Client({
-    region: 'auto',
-    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    credentials: {
-        accessKeyId: process.env.R2_ACCESS_KEY_ID,
-        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
-    }
-})
-
-const BUCKET_NAME = process.env.R2_BUCKET_NAME || 'secure-share-files'
-
-// UUID v4 format regex for fileId validation
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
-// Object key must be files/{uuid}.enc — no path traversal
 const OBJECT_KEY_REGEX = /^files\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.enc$/i
 
-// Upload IDs: alphanumeric, dashes, underscores, dots (S3/R2 format)
-const UPLOAD_ID_REGEX = /^[a-zA-Z0-9._-]+$/
+export function validateR2Config(env = process.env) {
+    const requiredR2Vars = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']
+    const missingVars = requiredR2Vars.filter(v => !env[v])
 
-/**
- * Validate objectKey matches safe pattern (files/{uuid}.enc)
- */
+    if (missingVars.length > 0) {
+        throw new Error(`Missing required R2 env vars: ${missingVars.join(', ')}`)
+    }
+}
+
+function getR2Config() {
+    validateR2Config()
+    return {
+        client: new S3Client({
+            region: 'auto',
+            endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+            credentials: {
+                accessKeyId: process.env.R2_ACCESS_KEY_ID,
+                secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
+            }
+        }),
+        bucketName: process.env.R2_BUCKET_NAME || 'secure-share-files'
+    }
+}
+
 function validateObjectKey(objectKey) {
     if (!objectKey || typeof objectKey !== 'string') {
         throw new Error('objectKey is required')
@@ -57,42 +51,38 @@ function validateObjectKey(objectKey) {
     }
 }
 
-/**
- * Get presigned URL for simple single-file upload (for files < 5MB)
- */
 export async function getPresignedUploadUrl(fileId) {
     if (!UUID_REGEX.test(fileId)) {
         throw new Error('Invalid fileId format')
     }
     const objectKey = `files/${fileId}.enc`
+    const { client, bucketName } = getR2Config()
 
     const command = new PutObjectCommand({
-        Bucket: BUCKET_NAME,
+        Bucket: bucketName,
         Key: objectKey,
         ContentType: 'application/octet-stream'
     })
 
-    const presignedUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 })
+    const presignedUrl = await getSignedUrl(client, command, { expiresIn: 3600 })
 
     return { presignedUrl, objectKey }
 }
 
-/**
- * Initiate multipart upload
- */
 export async function initiateMultipartUpload(fileId) {
     if (!UUID_REGEX.test(fileId)) {
         throw new Error('Invalid fileId format')
     }
     const objectKey = `files/${fileId}.enc`
+    const { client, bucketName } = getR2Config()
 
     const command = new CreateMultipartUploadCommand({
-        Bucket: BUCKET_NAME,
+        Bucket: bucketName,
         Key: objectKey,
         ContentType: 'application/octet-stream'
     })
 
-    const response = await r2Client.send(command)
+    const response = await client.send(command)
 
     return {
         uploadId: response.UploadId,
@@ -100,37 +90,32 @@ export async function initiateMultipartUpload(fileId) {
     }
 }
 
-
-/**
- * Generate presigned URL for part upload
- */
 export async function getPresignedPartUrl(objectKey, uploadId, partNumber) {
     validateObjectKey(objectKey)
+    const { client, bucketName } = getR2Config()
 
     if (!Number.isInteger(partNumber) || partNumber < 1) {
         throw new Error('Invalid partNumber: must be integer > 0')
     }
-    if (!uploadId || typeof uploadId !== 'string' || !UPLOAD_ID_REGEX.test(uploadId)) {
-        throw new Error('Invalid uploadId: must be non-empty alphanumeric token')
+    if (typeof uploadId !== 'string' || uploadId.trim().length === 0) {
+        throw new Error('Invalid uploadId: must be a non-empty string')
     }
 
     const command = new UploadPartCommand({
-        Bucket: BUCKET_NAME,
+        Bucket: bucketName,
         Key: objectKey,
         UploadId: uploadId,
         PartNumber: partNumber
     })
 
-    const presignedUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 })
+    const presignedUrl = await getSignedUrl(client, command, { expiresIn: 3600 })
 
     return { presignedUrl }
 }
 
-/**
- * Complete multipart upload
- */
 export async function completeMultipartUpload(objectKey, uploadId, parts) {
-    // Validate parts array
+    const { client, bucketName } = getR2Config()
+
     if (!Array.isArray(parts) || parts.length === 0) {
         throw new Error('parts must be a non-empty array')
     }
@@ -144,7 +129,7 @@ export async function completeMultipartUpload(objectKey, uploadId, parts) {
     }
 
     const command = new CompleteMultipartUploadCommand({
-        Bucket: BUCKET_NAME,
+        Bucket: bucketName,
         Key: objectKey,
         UploadId: uploadId,
         MultipartUpload: {
@@ -157,39 +142,35 @@ export async function completeMultipartUpload(objectKey, uploadId, parts) {
         }
     })
 
-    await r2Client.send(command)
+    await client.send(command)
 
     return { success: true, objectKey }
 }
 
-/**
- * Generate presigned URL for download
- */
 export async function getPresignedDownloadUrl(objectKey) {
     validateObjectKey(objectKey)
+    const { client, bucketName } = getR2Config()
 
     const command = new GetObjectCommand({
-        Bucket: BUCKET_NAME,
+        Bucket: bucketName,
         Key: objectKey
     })
 
-    const presignedUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 })
+    const presignedUrl = await getSignedUrl(client, command, { expiresIn: 3600 })
 
     return { presignedUrl }
 }
 
-/**
- * Delete object from R2
- */
 export async function deleteObject(objectKey) {
     validateObjectKey(objectKey)
+    const { client, bucketName } = getR2Config()
 
     const command = new DeleteObjectCommand({
-        Bucket: BUCKET_NAME,
+        Bucket: bucketName,
         Key: objectKey
     })
 
-    await r2Client.send(command)
+    await client.send(command)
 
     return { success: true }
 }

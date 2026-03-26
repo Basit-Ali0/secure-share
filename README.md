@@ -2,7 +2,7 @@
 
 # 🔒 MaskedFile
 
-### Zero-knowledge encrypted file sharing — your files are encrypted before they ever leave your browser.
+### Zero-knowledge encrypted file sharing with browser-side encryption, Cloudflare R2 storage, short links, download limits, and password-protected access.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -11,6 +11,7 @@
 [![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3-38BDF8?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com/)
 [![Cloudflare R2](https://img.shields.io/badge/Cloudflare-R2-F38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/r2/)
+[![Tests](https://img.shields.io/badge/tests-Vitest%20%2B%20RTL%20%2B%20Supertest-6E56CF)](./test)
 
 </div>
 
@@ -18,16 +19,23 @@
 
 ## 📖 Overview
 
-**MaskedFile** is a zero-knowledge, end-to-end encrypted file sharing platform. Files are encrypted in the browser using **AES-256-GCM** via the Web Crypto API — the server only ever receives ciphertext and never has access to your plaintext data or encryption keys. Decryption keys are embedded in the share link as a URL fragment (`#key`), which is never sent to the server.
+**MaskedFile** is a zero-knowledge file-sharing platform. Files are encrypted in the browser with **AES-256-GCM** before upload, and the decryption key never reaches the server. The backend stores only ciphertext in **Cloudflare R2** and metadata in **Supabase**.
+
+The current implementation also adds:
+
+- 🔗 **Short share links** with `/s/:shortId`
+- 🔐 **Optional password protection** before a download can be authorized
+- 🎯 **Atomic download limits** enforced server-side
+- ⏱️ **Expiry-based cleanup** for stale shares
+- ⚡ **Chunked worker-based encryption** for large-file support
 
 ### ✨ Key Highlights
 
-- 🔐 **Zero-knowledge architecture** — AES-256-GCM client-side encryption; the server sees only ciphertext
-- 📦 **Large file support** — Streaming encrypt → upload → download pipeline handles files up to **5 GB**
-- ⏱️ **Auto-expiry** — Files are automatically purged after a user-chosen duration
-- 🔗 **No account required** — Generate a shareable link with the decryption key embedded in the fragment
-- 🌍 **Global delivery** — Cloudflare R2 for fast, distributed storage
-- ⚡ **Non-blocking UI** — Encryption runs in a dedicated **Web Worker** thread
+- **Zero-knowledge by default**: the URL fragment carries `#key` and `#iv`, which are never sent in HTTP requests
+- **Direct-to-R2 upload pipeline**: the browser uploads encrypted chunks using presigned URLs
+- **Server-controlled download authorization**: clients cannot bypass download limits through old direct-download routes
+- **Multiple share identifiers**: both `/share/:fileId` and `/s/:shortId` are supported
+- **Automated test stack**: Vitest, React Testing Library, and Supertest cover the highest-risk flows
 
 ---
 
@@ -37,171 +45,291 @@
 
 ```mermaid
 graph TB
-    subgraph Client["🌐 Browser (Client)"]
-        UI["React UI\n(Vite + TailwindCSS)"]
-        WW["Web Worker\n(Encryption Engine)"]
-        WCAPI["Web Crypto API\nAES-256-GCM"]
-        UI <-->|"Encrypt/Decrypt jobs"| WW
-        WW <-->|"crypto.subtle"| WCAPI
+    subgraph Client["🌐 Browser Client"]
+        UI["React UI<br/>Vite + TailwindCSS"]
+        PAGES["Upload + Share Pages"]
+        WORKERS["Web Workers<br/>AES chunk encryption/decryption"]
+        CRYPTO["Web Crypto API<br/>AES-256-GCM"]
+        UI --> PAGES
+        PAGES <-->|jobs| WORKERS
+        WORKERS <-->|crypto.subtle| CRYPTO
     end
 
-    subgraph Server["🖥️ Express.js Backend (Node.js)"]
-        API["REST API\n/api/*"]
-        MWARE["Middleware\n(Rate limit, CORS, Auth)"]
-        UPLOAD["Upload Handler\n(Streaming multipart)"]
-        META["Metadata Service"]
-        EXPIRY["Expiry Scheduler\n(Cron job)"]
-        API --> MWARE --> UPLOAD
+    subgraph Server["🖥️ Express Backend"]
+        API["REST API<br/>/api/*"]
+        META["Metadata + lookup<br/>Supabase"]
+        AUTH["Unlock + authorize-download"]
+        CLEAN["Expiry cleanup endpoint"]
         API --> META
-        API --> EXPIRY
+        API --> AUTH
+        API --> CLEAN
     end
 
-    subgraph Storage["☁️ Cloud Services"]
-        R2["Cloudflare R2\n(Encrypted file blobs)"]
-        SUPA["Supabase\nPostgreSQL\n(File metadata)"]
+    subgraph Storage["☁️ Data Services"]
+        R2["Cloudflare R2<br/>Encrypted blobs only"]
+        DB["Supabase Postgres<br/>Metadata + counters + password hash"]
     end
 
-    UI -->|"Encrypted chunks (HTTPS)"| API
-    API -->|"Store ciphertext"| R2
-    API -->|"Store metadata\n(filename, size, expiry, IV)"| SUPA
-    EXPIRY -->|"Delete expired records"| SUPA
-    EXPIRY -->|"Delete expired blobs"| R2
-
-    linkStyle default stroke:#6366f1,stroke-width:2px
+    UI -->|"Presigned upload requests"| API
+    UI -->|"Encrypted chunks via presigned URLs"| R2
+    API -->|"Store and resolve metadata"| DB
+    AUTH -->|"Presigned download URL"| R2
+    CLEAN -->|"Delete expired objects"| R2
+    CLEAN -->|"Delete expired records"| DB
 ```
 
-### Component Breakdown
+### Current Component Breakdown
 
 ```mermaid
 graph LR
-    subgraph Frontend["src/ (React + Vite)"]
+    subgraph Frontend["src/"]
         direction TB
-        PAGES["pages/\nUpload · Download · Home"]
-        COMP["components/\nDropzone · ProgressBar\nShareCard · ExpiryPicker"]
-        HOOKS["hooks/\nuseEncryption · useUpload\nuseDownload"]
-        WORKER["workers/\ncrypto.worker.js"]
-        API_CLIENT["lib/api.js\n(fetch wrapper)"]
-        PAGES --> COMP
-        PAGES --> HOOKS
-        HOOKS --> WORKER
-        HOOKS --> API_CLIENT
+        APP["App.jsx<br/>Routes: /, /share/:fileId, /s/:shortId"]
+        HOME["pages/HomePage.jsx<br/>Upload flow + share link creation"]
+        SHARE["pages/SharePage.jsx<br/>Lookup, unlock, authorize, download"]
+        UTILS["utils/<br/>streamingEncryption.js<br/>r2Upload.js<br/>fileChunker.js<br/>workerPool.js"]
+        WKR["workers/encryptionWorker.js"]
+        APP --> HOME
+        APP --> SHARE
+        HOME --> UTILS
+        SHARE --> UTILS
+        UTILS --> WKR
     end
 
-    subgraph Backend["server/ (Express.js)"]
+    subgraph Backend["server/"]
         direction TB
-        ROUTES["routes/\nfiles.js · health.js"]
-        CTRL["controllers/\nupload · download · delete"]
-        SERVICES["services/\nr2.js · supabase.js"]
-        SCHED["scheduler/\nexpiry.js"]
-        ROUTES --> CTRL --> SERVICES
-        SCHED --> SERVICES
+        APPJS["app.js<br/>createApp() + routes"]
+        INDEX["index.js<br/>runtime bootstrap"]
+        R2JS["r2.js<br/>Presigned URL helpers"]
+        APPJS --> R2JS
+        INDEX --> APPJS
     end
 
-    API_CLIENT -->|"HTTP/HTTPS"| ROUTES
+    SHARE -->|"fetch"| APPJS
+    HOME -->|"fetch"| APPJS
 ```
 
 ---
 
-## 🔐 Encryption & Security Model
+## 🔐 Security & Trust Model
 
-### End-to-End Encryption Flow
+### Upload and Download Lifecycle
 
 ```mermaid
 sequenceDiagram
-    actor User
+    actor Sender
     participant UI as React UI
-    participant WW as Web Worker
-    participant WCAPI as Web Crypto API
-    participant Server as Express Server
+    participant Worker as Web Worker
+    participant Crypto as Web Crypto API
+    participant API as Express API
     participant R2 as Cloudflare R2
-    participant DB as Supabase DB
+    participant DB as Supabase
+    actor Recipient
 
-    Note over User,DB: ── UPLOAD ──────────────────────────────────────────
+    Note over Sender,DB: Upload
 
-    User->>UI: Selects file + expiry duration
-    UI->>WW: postMessage({ file, action: 'encrypt' })
-    WW->>WCAPI: crypto.subtle.generateKey(AES-GCM, 256)
-    WCAPI-->>WW: CryptoKey (never leaves browser)
-    WW->>WCAPI: crypto.subtle.exportKey('raw', key)
-    WCAPI-->>WW: keyBytes (base64url encoded)
-    WW->>WCAPI: crypto.subtle.encrypt(AES-GCM, key, chunk)
-    Note over WW: Streams file in chunks, encrypts each
-    WCAPI-->>WW: encryptedChunks + IV
-    WW-->>UI: { encryptedBlob, iv, keyBase64 }
-    UI->>Server: POST /api/files (multipart, encrypted blob + IV + expiry)
-    Server->>R2: Upload ciphertext blob
-    R2-->>Server: storageKey
-    Server->>DB: INSERT { id, iv, size, expiry, storageKey }
-    DB-->>Server: fileId
-    Server-->>UI: { fileId }
-    UI-->>User: Share link: https://app.url/d/{fileId}#keyBase64
-    Note over User: Key is in the URL fragment — NEVER sent to server
+    Sender->>UI: Select file, expiry, optional password, optional max downloads
+    UI->>Crypto: Generate AES-256-GCM key + IV
+    UI->>Worker: Encrypt file in chunks
+    Worker->>Crypto: Encrypt each chunk
+    Crypto-->>Worker: Ciphertext chunks
+    UI->>API: Request presigned upload flow
+    API-->>UI: Simple or multipart upload instructions
+    UI->>R2: Upload encrypted bytes directly
+    UI->>API: POST /api/files/metadata
+    API->>DB: Insert file metadata, short_id, limits, password_hash
+    DB-->>API: Stored metadata
+    API-->>UI: fileId + shortId
+    UI-->>Sender: Share /s/:shortId#key=...&iv=...
 
-    Note over User,DB: ── DOWNLOAD ─────────────────────────────────────────
+    Note over Recipient,DB: Download
 
-    User->>UI: Opens share link
-    UI->>UI: Extract key from window.location.hash
-    UI->>Server: GET /api/files/:fileId (no key!)
-    Server->>DB: SELECT metadata WHERE id = fileId
-    DB-->>Server: { iv, storageKey, expiry }
-    Server->>R2: GetObject(storageKey) — stream
-    R2-->>Server: Encrypted stream
-    Server-->>UI: Encrypted stream (chunked transfer)
-    UI->>WW: postMessage({ stream, iv, keyBase64, action: 'decrypt' })
-    WW->>WCAPI: crypto.subtle.importKey(keyBytes)
-    WW->>WCAPI: crypto.subtle.decrypt(AES-GCM, key, chunk)
-    WCAPI-->>WW: plaintext chunks
-    WW-->>UI: decryptedBlob
-    UI-->>User: Browser downloads plaintext file
+    Recipient->>UI: Open /share/:fileId or /s/:shortId
+    UI->>API: GET /api/files/:identifier
+    API->>DB: Resolve by file_id or short_id
+    DB-->>API: Metadata or locked metadata
+    API-->>UI: Public metadata response
+    alt Password protected
+        Recipient->>UI: Enter password
+        UI->>API: POST /api/files/:identifier/unlock
+        API->>DB: Verify password_hash
+        API-->>UI: Full metadata on success
+    end
+    Recipient->>UI: Click download
+    UI->>API: POST /api/files/:identifier/authorize-download
+    API->>DB: Check expiry + password + atomic download reservation
+    DB-->>API: Allowed or denied
+    API-->>UI: Presigned R2 download URL
+    UI->>R2: Fetch encrypted blob
+    UI->>Worker: Decrypt locally with fragment key + IV
+    Worker->>Crypto: Decrypt chunks
+    UI-->>Recipient: Browser saves plaintext file
 ```
 
-### Why the Server Never Sees Your Data
+### Why the Server Still Cannot Decrypt Files
 
-| What the server stores | What the server never sees |
+| The server stores or checks | The server never receives |
 |---|---|
-| Encrypted ciphertext | Plaintext file content |
-| Initialization Vector (IV) | AES encryption key |
-| File size, MIME type | File name (optionally encrypted) |
-| Expiry timestamp | Decryption key (URL fragment) |
-| Opaque file ID | Who uploaded or downloaded |
+| Encrypted chunks in R2 | Plaintext file content |
+| File metadata in Supabase | AES key from the URL fragment |
+| Optional `password_hash` | Raw decryption key material |
+| Download counters and expiry timestamps | The `#key` and `#iv` fragment values in HTTP requests |
+| Presigned URL issuance rules | The final plaintext generated in the browser |
 
-> **URL Fragment Security:** The decryption key lives in the `#fragment` of the share URL. Browsers never include the fragment in HTTP requests, meaning the key travels only between users and is never transmitted to any server.
+> **Important:** Password protection is an extra access gate. It does not replace client-side encryption, and it does not give the server the decryption key.
+
+---
+
+## 🌊 Current Data Flows
+
+### Upload Flow
+
+```mermaid
+flowchart TD
+    A([User selects file]) --> B[Generate fileId, key, IV]
+    B --> C[Chunk file in browser]
+    C --> D[Encrypt chunks in Web Workers]
+    D --> E{Small file?}
+    E -->|Yes| F[POST /api/r2/simple-upload]
+    E -->|No| G[POST /api/r2/initiate]
+    G --> H[POST /api/r2/presign-part]
+    H --> I[Upload encrypted parts to R2]
+    I --> J[POST /api/r2/complete]
+    F --> K[Encrypted blob stored in R2]
+    J --> K
+    K --> L[POST /api/files/metadata]
+    L --> M[Supabase stores metadata + short_id + limits + optional password_hash]
+    M --> N[Frontend builds /s/:shortId#key=...&iv=...]
+    N --> O([Share link copied])
+
+    style D fill:#7c3aed,color:#fff
+    style N fill:#059669,color:#fff
+```
+
+### Download Flow
+
+```mermaid
+flowchart TD
+    A([Recipient opens share link]) --> B[Read key and IV from window.location.hash]
+    A --> C[Resolve identifier from /share/:fileId or /s/:shortId]
+    C --> D[GET /api/files/:identifier]
+    D --> E{Protected file?}
+    E -->|Yes| F[Show unlock screen]
+    F --> G[POST /api/files/:identifier/unlock]
+    G --> H[Full metadata returned]
+    E -->|No| H
+    H --> I[POST /api/files/:identifier/authorize-download]
+    I --> J{Allowed?}
+    J -->|No| K([Expired, wrong password, or exhausted])
+    J -->|Yes| L[Return presigned R2 download URL]
+    L --> M[Browser fetches encrypted blob from R2]
+    M --> N[Decrypt locally in worker]
+    N --> O([Browser downloads plaintext file])
+
+    style I fill:#1d4ed8,color:#fff
+    style N fill:#7c3aed,color:#fff
+```
+
+### Route Surface
+
+```mermaid
+flowchart LR
+    subgraph FrontendRoutes["Frontend routes"]
+        R1["/"]
+        R2["/share/:fileId"]
+        R3["/s/:shortId"]
+    end
+
+    subgraph ApiRoutes["Implemented API routes"]
+        A1["POST /api/r2/simple-upload"]
+        A2["POST /api/r2/initiate"]
+        A3["POST /api/r2/presign-part"]
+        A4["POST /api/r2/complete"]
+        A5["POST /api/files/metadata"]
+        A6["GET /api/files/:identifier"]
+        A7["POST /api/files/:identifier/unlock"]
+        A8["POST /api/files/:identifier/authorize-download"]
+        A9["POST /api/cleanup-expired"]
+        A10["GET /api/health"]
+    end
+
+    R1 --> A1
+    R1 --> A5
+    R2 --> A6
+    R2 --> A7
+    R2 --> A8
+    R3 --> A6
+    R3 --> A7
+    R3 --> A8
+```
+
+---
+
+## 🗄️ Data Model
+
+The `files` table stores metadata only. Ciphertext is stored in Cloudflare R2.
+
+```mermaid
+erDiagram
+    FILES {
+        text file_id PK
+        text short_id UK
+        text original_name
+        text file_type
+        bigint file_size
+        text storage_path
+        text storage_backend
+        integer chunk_count
+        jsonb chunk_sizes
+        timestamptz expires_at
+        integer download_count
+        integer max_downloads
+        text password_hash
+    }
+```
+
+### Tracked SQL scripts
+
+- `scripts/phase1_link_shortening.sql`
+- `scripts/phase2_download_limits.sql`
+- `scripts/phase3_password_protection.sql`
 
 ---
 
 ## 📁 Project Structure
 
-```
+```text
 secure-share/
 ├── .github/
-│   └── workflows/           # CI/CD GitHub Actions pipelines
-│       ├── ci.yml           # Lint, test, build on PR
-│       └── deploy.yml       # Deploy to Render on push to main
-│
-├── scripts/                 # Utility and maintenance scripts
-│
-├── server/                  # Express.js backend
-│   ├── routes/              # API route definitions
-│   ├── controllers/         # Business logic (upload, download, expiry)
-│   ├── services/            # External integrations (R2, Supabase)
-│   ├── middleware/          # Auth, rate limiting, CORS
-│   └── index.js             # Server entry point
-│
-├── src/                     # React frontend (Vite)
-│   ├── components/          # Reusable UI components
-│   ├── pages/               # Route-level page components
-│   ├── hooks/               # Custom React hooks
-│   ├── workers/             # Web Worker (crypto.worker.js)
-│   └── lib/                 # API client, utilities
-│
-├── index.html               # Vite HTML entry point
-├── vite.config.js           # Vite build config
-├── tailwind.config.js       # TailwindCSS config
-├── postcss.config.js        # PostCSS config
-├── Dockerfile               # Multi-stage production Docker image
-├── render.yaml              # Render.com deployment manifest
-├── .env.example             # Required environment variable template
-└── package.json             # Monorepo scripts (frontend + backend)
+│   └── workflows/
+│       ├── cleanup-expired.yml
+│       └── tests.yml
+├── docs/
+│   └── archive/
+├── scripts/
+│   ├── phase1_link_shortening.sql
+│   ├── phase2_download_limits.sql
+│   └── phase3_password_protection.sql
+├── server/
+│   ├── app.js
+│   ├── index.js
+│   └── r2.js
+├── src/
+│   ├── components/
+│   ├── context/
+│   ├── pages/
+│   ├── utils/
+│   ├── workers/
+│   ├── App.jsx
+│   └── main.jsx
+├── test/
+│   ├── frontend/
+│   ├── server/
+│   └── setup/
+├── architecture.md
+├── STREAMING_SETUP.md
+├── vitest.config.js
+└── package.json
 ```
 
 ---
@@ -210,16 +338,15 @@ secure-share/
 
 | Layer | Technology | Purpose |
 |---|---|---|
-| **Frontend** | [React 18](https://react.dev/) + [Vite](https://vitejs.dev/) | UI framework and dev/build tooling |
-| **Styling** | [TailwindCSS 3](https://tailwindcss.com/) | Utility-first CSS |
-| **Encryption** | [Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API) | Native browser AES-256-GCM |
-| **Threading** | [Web Workers](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API) | Off-thread crypto (non-blocking UI) |
-| **Backend** | [Express.js](https://expressjs.com/) on [Node.js](https://nodejs.org/) | REST API, streaming file proxy |
-| **Object Storage** | [Cloudflare R2](https://developers.cloudflare.com/r2/) | S3-compatible blob storage |
-| **Database** | [Supabase](https://supabase.com/) (PostgreSQL) | File metadata and expiry tracking |
-| **Containerization** | [Docker](https://www.docker.com/) | Production-ready container image |
-| **Deployment** | [Render](https://render.com/) | Hosting via `render.yaml` |
-| **CI/CD** | GitHub Actions | Automated build, lint, and deploy |
+| Frontend | [React 18](https://react.dev/) + [Vite](https://vitejs.dev/) | UI, routing, dev/build tooling |
+| Styling | [TailwindCSS 3](https://tailwindcss.com/) | Utility-first CSS |
+| Encryption | [Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API) | AES-256-GCM in the browser |
+| Worker execution | [Web Workers](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API) | Off-main-thread chunk encryption/decryption |
+| Backend | [Express.js](https://expressjs.com/) + [Node.js](https://nodejs.org/) | Presigned URL issuance, metadata, authorization, cleanup |
+| Object storage | [Cloudflare R2](https://developers.cloudflare.com/r2/) | Encrypted object storage |
+| Metadata store | [Supabase](https://supabase.com/) | PostgreSQL metadata, counters, RPC-backed authorization |
+| Password hashing | [bcrypt](https://www.npmjs.com/package/bcrypt) | Optional password protection |
+| Tests | [Vitest](https://vitest.dev/), [React Testing Library](https://testing-library.com/), [Supertest](https://www.npmjs.com/package/supertest) | Frontend and backend automated coverage |
 
 ---
 
@@ -227,207 +354,135 @@ secure-share/
 
 ### Prerequisites
 
-- **Node.js** v18 or later
-- **npm** v9 or later
-- A [Cloudflare R2](https://developers.cloudflare.com/r2/) bucket
-- A [Supabase](https://supabase.com/) project (free tier works)
+- **Node.js** 18+
+- **npm** 9+
+- A **Cloudflare R2** bucket
+- A **Supabase** project
 
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/Basit-Ali0/secure-share.git
-cd secure-share
-```
-
-### 2. Install Dependencies
+### Install dependencies
 
 ```bash
 npm install
 ```
 
-### 3. Configure Environment Variables
+### Start the frontend only
 
 ```bash
-cp .env.example .env
+npm run dev
 ```
 
-Open `.env` and fill in your credentials (see [Environment Variables](#environment-variables) below).
-
-### 4. Start Development Server
+### Start the backend only
 
 ```bash
-npm run start
+npm run server
 ```
 
-This starts both the **Vite dev server** (frontend, with HMR) and the **Express backend** concurrently. The app is typically available at `http://localhost:5173`.
+### Start both together
+
+```bash
+npm run dev:full
+```
+
+Expected local ports:
+
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:3000`
 
 ---
 
 ## 🔑 Environment Variables
 
-| Variable | Description | Example |
+| Variable | Used by | Notes |
 |---|---|---|
-| `PORT` | Port for the Express backend | `3001` |
-| `SUPABASE_URL` | Your Supabase project URL | `https://xxxx.supabase.co` |
-| `SUPABASE_ANON_KEY` | Supabase anonymous/service key | `eyJhbGci...` |
-| `R2_ACCOUNT_ID` | Cloudflare account ID | `abc123def456` |
-| `R2_ACCESS_KEY_ID` | R2 access key ID | `your_r2_access_key` |
-| `R2_SECRET_ACCESS_KEY` | R2 secret access key | `your_r2_secret` |
-| `R2_BUCKET_NAME` | Name of your R2 bucket | `maskedfile-storage` |
-| `R2_PUBLIC_URL` | Public URL for your R2 bucket | `https://pub.r2.dev/bucket` |
-| `VITE_API_BASE_URL` | Backend API URL (used by Vite/frontend) | `http://localhost:3001` |
-
-> ⚠️ **Never commit your `.env` file.** It is already listed in `.gitignore`.
+| `VITE_SUPABASE_URL` | Frontend + backend | Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | Frontend | Public anon key used by the client |
+| `SUPABASE_SERVICE_KEY` | Backend | Service-role key for metadata operations |
+| `R2_ACCOUNT_ID` | Backend | Cloudflare account ID |
+| `R2_ACCESS_KEY_ID` | Backend | R2 access key |
+| `R2_SECRET_ACCESS_KEY` | Backend | R2 secret key |
+| `R2_BUCKET_NAME` | Backend | Bucket name for encrypted objects |
+| `PORT` | Backend | Defaults to `3000` |
+| `CLEANUP_SECRET` | Backend | Required by `POST /api/cleanup-expired` via `x-cleanup-secret` |
 
 ---
 
-## 🗄️ Database Schema
+## 🧪 Testing
 
-The Supabase PostgreSQL database stores metadata about uploaded files. The server never stores file contents — only ciphertext lives in R2.
+### Automated tests
 
-```mermaid
-erDiagram
-    FILES {
-        uuid id PK "Unique file ID (shared in URL)"
-        text storage_key "R2 object key for the ciphertext"
-        text iv "Base64-encoded AES-GCM IV"
-        bigint size_bytes "File size in bytes"
-        text mime_type "Original MIME type"
-        timestamp expires_at "Auto-deletion time"
-        timestamp created_at "Upload timestamp"
-    }
+```bash
+npm test
 ```
+
+### Watch mode
+
+```bash
+npm run test:watch
+```
+
+### Coverage
+
+```bash
+npm run test:coverage
+```
+
+Current automated coverage includes:
+
+- Short-link creation and identifier lookup
+- Password-protected metadata and unlock behavior
+- Atomic download authorization and limit exhaustion
+- Share page regression coverage for protected-file rendering
+
+Manual smoke checks are still recommended for:
+
+- Real upload/download flows against your live Supabase + R2 setup
+- Expiry cleanup behavior over time
+- Cross-browser download behavior for larger files
 
 ---
 
-## 🚀 Deployment
+## 🚀 Deployment and Operations
 
-### Option 1: Render (Recommended)
-
-The repo includes a `render.yaml` configuration for a one-click deployment to [Render](https://render.com/).
-
-1. Fork or connect this repo to your Render account.
-2. Render will automatically detect `render.yaml` and create the service.
-3. Add all environment variables from `.env.example` in the Render dashboard under **Environment**.
-4. Deploy — Render handles builds and restarts automatically on push to `main`.
-
-### Option 2: Docker
-
-A multi-stage `Dockerfile` is included for containerized deployments.
-
-```bash
-# Build the image
-docker build -t maskedfile .
-
-# Run the container
-docker run -p 3001:3001 --env-file .env maskedfile
-```
-
-### Option 3: Manual (VPS / Cloud VM)
-
-```bash
-# Build the frontend
-npm run build
-
-# Start the production server (serves built frontend + API)
-npm run start:prod
-```
-
-### CI/CD Pipeline
+### CI validation
 
 ```mermaid
 flowchart LR
-    PR["Pull Request\nopened/updated"] -->|trigger| LINT["Lint &\nType Check"]
-    LINT --> TEST["Unit Tests"]
-    TEST --> BUILD["npm run build"]
-    BUILD --> PASS{All checks\npassed?}
-    PASS -->|Yes| MERGE["Merge to main"]
-    PASS -->|No| BLOCK["Block merge"]
-    MERGE -->|trigger| DEPLOY["Deploy to Render\n(render.yaml)"]
-    DEPLOY --> LIVE["🟢 Live"]
+    PR["Push or PR"] --> BUILD["npm run build"]
+    BUILD --> TEST["npm test"]
+    TEST --> PASS{Pass?}
+    PASS -->|Yes| GREEN["Healthy branch"]
+    PASS -->|No| RED["Fix before merge"]
 ```
+
+### Cleanup behavior
+
+- Expired files are removed through `POST /api/cleanup-expired`
+- The endpoint requires `x-cleanup-secret`
+- Exhausted downloads are blocked immediately by authorization logic
+- Physical deletion of exhausted files is **best-effort delayed cleanup**, not a hard transactional guarantee
 
 ---
 
-## 🌊 Data Flow Diagrams
+## ⚠️ Current Limitations
 
-### Upload Flow
-
-```mermaid
-flowchart TD
-    A([User selects file]) --> B[File read as ArrayBuffer]
-    B --> C{File > chunk threshold?}
-    C -->|Yes| D[Split into streaming chunks]
-    C -->|No| E[Single chunk]
-    D --> F["Web Worker: encrypt each chunk — AES-256-GCM"]
-    E --> F
-    F --> G[Assemble encrypted Blob + IV]
-    G --> H["POST /api/files — multipart/form-data"]
-    H --> I[Express streams to R2]
-    I --> J[R2 returns storageKey]
-    J --> K[Metadata saved to Supabase]
-    K --> L[Server returns fileId]
-    L --> M["UI builds share URL: /d/fileId + fragment key"]
-    M --> N([User copies and shares link])
-
-    style F fill:#7c3aed,color:#fff
-    style M fill:#059669,color:#fff
-```
-
-### Download Flow
-
-```mermaid
-flowchart TD
-    A([Recipient opens share link]) --> B["UI reads key from window.location.hash"]
-    B --> C["GET /api/files/:fileId — no key in request!"]
-    C --> D[Server fetches metadata from Supabase]
-    D --> E{File expired?}
-    E -->|Yes| F([Error: File has expired])
-    E -->|No| G[Server streams ciphertext from R2]
-    G --> H[Chunked Transfer Encoding to browser]
-    H --> I["Web Worker: decrypt each chunk — AES-256-GCM with key + IV"]
-    I --> J[Reassemble plaintext Blob]
-    J --> K([Browser downloads original file])
-
-    style I fill:#7c3aed,color:#fff
-    style B fill:#1d4ed8,color:#fff
-```
+- Multiple file upload and ZIP packaging are not implemented yet
+- There is no browser E2E suite yet
+- Tests use mocks for Supabase and R2 rather than live external services
+- The old direct `GET /api/r2/download/*` route is intentionally disabled so download limits cannot be bypassed
 
 ---
 
-## 🔒 Security Considerations
+## 📚 Supporting Docs
 
-- **AES-256-GCM** provides both confidentiality and integrity (authenticated encryption). Tampered ciphertext will fail decryption.
-- **Key isolation via URL fragment**: The `#fragment` is never sent in HTTP headers or server logs.
-- **No key storage**: The server has no key storage, no key escrow, and no ability to decrypt files — even under legal compulsion.
-- **IV uniqueness**: A fresh random IV is generated for every upload, preventing nonce reuse attacks.
-- **Auto-expiry**: Files are purged from both R2 and the database after the chosen TTL, reducing the data retention footprint.
-- **Rate limiting**: The Express API applies rate limiting middleware to prevent abuse.
-- **CORS policy**: The server enforces strict CORS headers to prevent cross-origin misuse.
-
-> ⚠️ **Threat model note:** If the server were compromised and served malicious JavaScript, a sophisticated attacker could intercept keys client-side. For the highest assurance, verify the frontend build hash independently or self-host.
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. **Fork** the repository and create a feature branch: `git checkout -b feature/my-feature`
-2. **Make your changes** and ensure the existing code style is maintained.
-3. **Test** your changes locally with `npm run start`.
-4. **Open a Pull Request** with a clear description of what was changed and why.
-
-Please make sure your PR:
-- Passes all CI checks (lint + build)
-- Does not introduce any plaintext storage of file content
-- Does not weaken the zero-knowledge encryption model
+- [architecture.md](./architecture.md)
+- [STREAMING_SETUP.md](./STREAMING_SETUP.md)
+- Historical docs live in [docs/archive/](./docs/archive/)
 
 ---
 
 ## 📄 License
 
-This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the **MIT License**. See [LICENSE](./LICENSE).
 
 ---
 

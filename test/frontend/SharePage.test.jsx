@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { HelmetProvider } from 'react-helmet-async'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { vi } from 'vitest'
 import SharePage from '../../src/pages/SharePage.jsx'
@@ -12,12 +13,14 @@ vi.mock('../../src/utils/streamingEncryption', () => ({
 function renderSharePage(route = '/s/Short123#key=test-key&iv=test-iv') {
     window.location.hash = '#key=test-key&iv=test-iv'
     return render(
-        <MemoryRouter initialEntries={[route]}>
-            <Routes>
-                <Route path="/share/:fileId" element={<SharePage />} />
-                <Route path="/s/:shortId" element={<SharePage />} />
-            </Routes>
-        </MemoryRouter>
+        <HelmetProvider>
+            <MemoryRouter initialEntries={[route]}>
+                <Routes>
+                    <Route path="/share/:fileId" element={<SharePage />} />
+                    <Route path="/s/:shortId" element={<SharePage />} />
+                </Routes>
+            </MemoryRouter>
+        </HelmetProvider>
     )
 }
 

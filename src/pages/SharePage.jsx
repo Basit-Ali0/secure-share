@@ -1,8 +1,11 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
+import { Helmet } from 'react-helmet-async'
 import { formatFileSize, getFileIcon } from '../utils/fileUtils'
 import { downloadAndDecryptStreaming, terminateWorkerPool } from '../utils/streamingEncryption'
 import QRCode from '../components/SharePage/QRCode'
+import { buildCanonicalUrl, SITE_NAME } from '../lib/siteConfig'
+import { trackEvent } from '../lib/analytics'
 
 export default function SharePage() {
     const { fileId, shortId } = useParams()
@@ -115,6 +118,10 @@ export default function SharePage() {
             setIsUnlocked(true)
         } catch (err) {
             setUnlockError(err.message)
+            trackEvent('unlock_failed', {
+                category: 'engagement',
+                label: 'password_required',
+            })
         } finally {
             setUnlocking(false)
         }
@@ -179,6 +186,10 @@ export default function SharePage() {
                 max_downloads: authorization.maxDownloads,
                 remaining_downloads: authorization.remainingDownloads
             } : prev)
+            trackEvent('download_authorized', {
+                category: 'engagement',
+                label: authorization.maxDownloads == null ? 'unlimited' : 'limited',
+            })
 
             await downloadAndDecryptStreaming(
                 authorization.presignedUrl,
@@ -215,6 +226,11 @@ export default function SharePage() {
     if (loading) {
         return (
             <div className="min-h-screen bg-surface flex items-center justify-center relative overflow-hidden">
+                <Helmet>
+                    <title>{`Loading Secure Share | ${SITE_NAME}`}</title>
+                    <meta name="robots" content="noindex, nofollow, noarchive" />
+                    <meta name="googlebot" content="noindex, nofollow, noarchive" />
+                </Helmet>
                 <div className="ambient-glow" />
                 <div className="relative z-10 glass-card p-12 text-center">
                     <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
@@ -228,6 +244,11 @@ export default function SharePage() {
     if (error) {
         return (
             <div className="min-h-screen bg-surface flex items-center justify-center relative overflow-hidden">
+                <Helmet>
+                    <title>{`Secure Share Unavailable | ${SITE_NAME}`}</title>
+                    <meta name="robots" content="noindex, nofollow, noarchive" />
+                    <meta name="googlebot" content="noindex, nofollow, noarchive" />
+                </Helmet>
                 <div className="ambient-glow" />
                 <div className="relative z-10 glass-card p-12 text-center max-w-md mx-4">
                     <div className="w-16 h-16 bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -331,6 +352,12 @@ export default function SharePage() {
 
     return (
         <div className="min-h-screen bg-surface relative overflow-hidden">
+            <Helmet>
+                <title>{requiresPassword ? `Protected Share | ${SITE_NAME}` : `${metadata.original_name} | ${SITE_NAME}`}</title>
+                <meta name="description" content="Private encrypted file share. Search engines should not index this page." />
+                <meta name="robots" content="noindex, nofollow, noarchive" />
+                <meta name="googlebot" content="noindex, nofollow, noarchive" />
+            </Helmet>
             {/* Ambient background glow */}
             <div className="ambient-glow" />
 

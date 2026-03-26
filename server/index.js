@@ -9,6 +9,13 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const distPath = path.join(__dirname, '..', 'dist')
 
+app.use((req, res, next) => {
+    if (/^\/(share|s)(\/|$)/.test(req.path)) {
+        res.set('X-Robots-Tag', 'noindex, nofollow, noarchive')
+    }
+    next()
+})
+
 app.use(express.static(distPath))
 
 app.all('/api/*', (req, res) => {

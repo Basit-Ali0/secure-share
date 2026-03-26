@@ -72,7 +72,7 @@ The SQL schema creates it automatically, but verify:
 
 ## How It Works (Zero-Knowledge)
 
-```
+```text
 User Browser:
 1. Select file
 2. Encrypt with AES-256-GCM (Web Crypto API)

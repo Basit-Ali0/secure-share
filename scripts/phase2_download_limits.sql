@@ -6,7 +6,8 @@ begin
     if not exists (
         select 1
         from pg_constraint
-        where conname = 'files_max_downloads_positive'
+        where conrelid = 'public.files'::regclass
+          and conname = 'files_max_downloads_positive'
     ) then
         alter table public.files
         add constraint files_max_downloads_positive

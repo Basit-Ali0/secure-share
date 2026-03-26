@@ -2,6 +2,7 @@ import express from 'express'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { createRuntimeContext } from './app.js'
+import { validateR2Config } from './r2.js'
 
 const { app, env } = createRuntimeContext()
 const __filename = fileURLToPath(import.meta.url)
@@ -19,6 +20,7 @@ app.get('*', (req, res) => {
 })
 
 const PORT = env.PORT || 3000
+validateR2Config(env)
 app.listen(PORT, () => {
     console.log(`Zero-Knowledge Server running on port ${PORT}`)
     console.log(`R2 Bucket: ${env.R2_BUCKET_NAME || 'secure-share-files'}`)

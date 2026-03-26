@@ -72,7 +72,7 @@ export default function DragDropZone({ onFileSelect, selectedFile }) {
             onDrop={handleDrop}
             onClick={handleClick}
             className={`
-                upload-zone aspect-square w-full group cursor-pointer relative
+                upload-zone aspect-square w-full group cursor-pointer relative transition-transform duration-150 ease-out
                 ${isDragging ? 'border-primary bg-surface-variant scale-[1.02]' : ''}
             `}
         >

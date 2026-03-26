@@ -32,7 +32,7 @@
 
 ### 1. Install Dependencies
 ```bash
-cd c:\Users\basit\.gemini\antigravity\playground\metallic-blazar
+cd ./metallic-blazar
 npm install
 ```
 
@@ -41,7 +41,7 @@ npm install
 2. Create a new project (free tier)
 3. Get your API credentials from Project Settings > API
 4. Create `.env` file and add:
-   ```
+   ```bash
    VITE_SUPABASE_URL=your_url
    VITE_SUPABASE_ANON_KEY=your_key
    ```
@@ -55,7 +55,7 @@ npm run dev
 - Test dark mode toggle
 - Upload different file sizes to see tier badges
 
-###4. Review the Code
+### 4. Review the Code
 - Check component structure in `src/components/`
 - Review glassmorphism styles in `src/index.css`
 - Test responsiveness on mobile

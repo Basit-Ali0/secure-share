@@ -33,13 +33,12 @@ export default function HomePage() {
 
         try {
             const trimmedMaxDownloads = maxDownloadsInput.trim()
-            const maxDownloads = trimmedMaxDownloads
-                ? Number.parseInt(trimmedMaxDownloads, 10)
-                : null
+            const hasDownloadLimit = trimmedMaxDownloads.length > 0
+            const maxDownloads = hasDownloadLimit ? Number(trimmedMaxDownloads) : null
             const normalizedPassword = passwordInput.trim()
             const normalizedConfirmPassword = confirmPasswordInput.trim()
 
-            if (trimmedMaxDownloads && (!Number.isInteger(maxDownloads) || maxDownloads <= 0)) {
+            if (hasDownloadLimit && !/^[1-9]\d*$/.test(trimmedMaxDownloads)) {
                 throw new Error('Download limit must be a whole number greater than 0')
             }
 
@@ -230,10 +229,11 @@ export default function HomePage() {
                                                         Optional password
                                                     </label>
                                                     <input
-                                                        type="password"
-                                                        value={passwordInput}
-                                                        onChange={(event) => setPasswordInput(event.target.value)}
-                                                        placeholder="Leave blank for no password"
+                                                    type="password"
+                                                    autoComplete="new-password"
+                                                    value={passwordInput}
+                                                    onChange={(event) => setPasswordInput(event.target.value)}
+                                                    placeholder="Leave blank for no password"
                                                         className="w-full bg-transparent text-white placeholder:text-on-surface-variant/60 outline-none text-sm"
                                                     />
                                                 </div>
@@ -242,10 +242,11 @@ export default function HomePage() {
                                                         Confirm password
                                                     </label>
                                                     <input
-                                                        type="password"
-                                                        value={confirmPasswordInput}
-                                                        onChange={(event) => setConfirmPasswordInput(event.target.value)}
-                                                        placeholder="Repeat password"
+                                                    type="password"
+                                                    autoComplete="new-password"
+                                                    value={confirmPasswordInput}
+                                                    onChange={(event) => setConfirmPasswordInput(event.target.value)}
+                                                    placeholder="Repeat password"
                                                         className="w-full bg-transparent text-white placeholder:text-on-surface-variant/60 outline-none text-sm"
                                                     />
                                                 </div>

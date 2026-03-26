@@ -58,40 +58,32 @@ export function createApp(options = {}) {
     }
 
     function generateShortId(length = SHORT_ID_LENGTH) {
-        const randomBytes = cryptoModule.randomBytes(length)
         let shortId = ''
+        const alphabetLength = SHORT_ID_ALPHABET.length
+        const maxByte = Math.floor(256 / alphabetLength) * alphabetLength
 
-        for (let i = 0; i < length; i++) {
-            shortId += SHORT_ID_ALPHABET[randomBytes[i] % SHORT_ID_ALPHABET.length]
+        while (shortId.length < length) {
+            const randomBytes = cryptoModule.randomBytes(length)
+
+            for (const randomByte of randomBytes) {
+                if (randomByte >= maxByte) {
+                    continue
+                }
+
+                shortId += SHORT_ID_ALPHABET[randomByte % alphabetLength]
+
+                if (shortId.length === length) {
+                    break
+                }
+            }
         }
 
         return shortId
     }
 
-    async function createUniqueShortId(maxAttempts = 5) {
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
-            const shortId = generateShortId()
-            const { data, error } = await supabase
-                .from('files')
-                .select('short_id')
-                .eq('short_id', shortId)
-                .maybeSingle()
-
-            if (error) {
-                throw new Error(`Failed to validate short ID uniqueness: ${error.message}`)
-            }
-
-            if (!data) {
-                return shortId
-            }
-        }
-
-        throw new Error('Failed to generate a unique short ID')
-    }
-
     async function insertFileMetadataWithShortId(fileRecord, maxAttempts = 5) {
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
-            const shortId = await createUniqueShortId()
+            const shortId = generateShortId()
             const { error } = await supabase.from('files').insert({
                 ...fileRecord,
                 short_id: shortId
@@ -133,6 +125,7 @@ export function createApp(options = {}) {
 
     function formatMetadataResponse(file) {
         const baseResponse = {
+            ...file,
             file_id: file.file_id,
             short_id: file.short_id,
             original_name: file.original_name,
@@ -146,7 +139,6 @@ export function createApp(options = {}) {
             created_at: file.created_at,
             download_count: file.download_count,
             max_downloads: file.max_downloads,
-            ...file,
             remaining_downloads: getRemainingDownloads(file),
             is_download_limited: file.max_downloads != null,
             is_password_protected: Boolean(file.password_hash)
@@ -174,6 +166,31 @@ export function createApp(options = {}) {
 
         const normalizedPassword = password.trim()
         return normalizedPassword.length > 0 ? normalizedPassword : null
+    }
+
+    function isFutureDateString(value) {
+        if (typeof value !== 'string' || value.trim().length === 0) {
+            return false
+        }
+
+        const parsedDate = new Date(value)
+        return !Number.isNaN(parsedDate.getTime()) && parsedDate > new Date()
+    }
+
+    function parsePositiveIntegerInput(value) {
+        if (value == null || value === '') {
+            return null
+        }
+
+        if (typeof value === 'number') {
+            return Number.isInteger(value) && value > 0 ? value : NaN
+        }
+
+        if (typeof value === 'string' && /^[1-9]\d*$/.test(value.trim())) {
+            return Number(value.trim())
+        }
+
+        return NaN
     }
 
     function scheduleExhaustedFileDeletion(file) {
@@ -301,10 +318,47 @@ export function createApp(options = {}) {
                 password
             } = req.body
 
+            if (!isUuid(fileId)) {
+                return res.status(400).json({ message: 'fileId must be a valid UUID' })
+            }
+
+            if (!storagePath || typeof storagePath !== 'string') {
+                return res.status(400).json({ message: 'storagePath is required' })
+            }
+
+            if (typeof originalName !== 'string' || originalName.trim().length === 0) {
+                return res.status(400).json({ message: 'originalName is required' })
+            }
+
+            if (typeof fileSize !== 'number' || !Number.isFinite(fileSize) || fileSize < 0) {
+                return res.status(400).json({ message: 'fileSize must be a non-negative number' })
+            }
+
+            if (!isFutureDateString(expiresAt)) {
+                return res.status(400).json({ message: 'expiresAt must be a valid future date' })
+            }
+
+            const parsedMaxDownloads = parsePositiveIntegerInput(maxDownloads)
+            if (Number.isNaN(parsedMaxDownloads)) {
+                return res.status(400).json({ message: 'maxDownloads must be a whole number greater than 0' })
+            }
+
+            if (chunkCount != null && (!Number.isInteger(chunkCount) || chunkCount < 1)) {
+                return res.status(400).json({ message: 'chunkCount must be an integer greater than 0' })
+            }
+
+            if (chunkSizes != null && !Array.isArray(chunkSizes)) {
+                return res.status(400).json({ message: 'chunkSizes must be an array when provided' })
+            }
+
             const normalizedPassword = normalizeOptionalPassword(password)
             const passwordHash = normalizedPassword
                 ? await bcryptModule.hash(normalizedPassword, 10)
                 : null
+
+            const normalizedExpiresAt = new Date(expiresAt).toISOString()
+            const normalizedChunkCount = chunkCount ?? 1
+            const normalizedStorageBackend = storageBackend || 'r2'
 
             const shortId = await insertFileMetadataWithShortId({
                 file_id: fileId,
@@ -312,11 +366,11 @@ export function createApp(options = {}) {
                 file_type: fileType,
                 file_size: fileSize,
                 storage_path: storagePath,
-                storage_backend: storageBackend || 'r2',
-                chunk_count: chunkCount || 1,
+                storage_backend: normalizedStorageBackend,
+                chunk_count: normalizedChunkCount,
                 chunk_sizes: chunkSizes || null,
-                expires_at: expiresAt,
-                max_downloads: maxDownloads ?? null,
+                expires_at: normalizedExpiresAt,
+                max_downloads: parsedMaxDownloads,
                 password_hash: passwordHash
             })
 

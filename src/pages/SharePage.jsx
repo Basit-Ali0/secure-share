@@ -86,7 +86,9 @@ export default function SharePage() {
         }
     }
 
-    async function handleUnlock() {
+    async function handleUnlock(event) {
+        event?.preventDefault()
+
         try {
             setUnlocking(true)
             setUnlockError('')
@@ -123,6 +125,7 @@ export default function SharePage() {
             setDownloading(true)
             setDownloadProgress(0)
             setDownloadStatus('Authorizing...')
+            setDownloadComplete(false)
 
             const hash = window.location.hash.substring(1)
             const params = new URLSearchParams(hash)
@@ -131,6 +134,18 @@ export default function SharePage() {
 
             if (!keyHex || !ivHex) {
                 throw new Error('Encryption keys missing from URL. Invalid share link.')
+            }
+
+            if (requiresPassword) {
+                throw new Error('Unlock the file before downloading.')
+            }
+
+            const hasChunkCount = Number.isInteger(metadata?.chunk_count) && metadata.chunk_count > 0
+            const hasChunkSizes = metadata?.chunk_count === 1 || Array.isArray(metadata?.chunk_sizes)
+            const hasFileName = typeof metadata?.original_name === 'string' && metadata.original_name.length > 0
+
+            if (!metadata || !hasChunkCount || !hasChunkSizes || !hasFileName) {
+                throw new Error('File metadata is incomplete. Refresh the page or unlock the file again.')
             }
 
             const authorizeResponse = await fetch(`/api/files/${identifier}/authorize-download`, {
@@ -259,42 +274,45 @@ export default function SharePage() {
                             </div>
                         )}
 
-                        <div className="rounded-2xl border border-outline-variant bg-surface-container-high px-4 py-3 text-left">
-                            <label className="block text-xs uppercase tracking-wide text-on-surface-variant mb-2">
-                                Password
-                            </label>
-                            <input
-                                type="password"
-                                value={passwordInput}
-                                onChange={(event) => setPasswordInput(event.target.value)}
-                                placeholder="Enter password"
-                                className="w-full bg-transparent text-white placeholder:text-on-surface-variant/60 outline-none text-sm"
-                            />
-                        </div>
-
-                        {unlockError && (
-                            <div className="text-sm text-red-400">
-                                {unlockError}
+                        <form onSubmit={handleUnlock} className="space-y-4">
+                            <div className="rounded-2xl border border-outline-variant bg-surface-container-high px-4 py-3 text-left">
+                                <label className="block text-xs uppercase tracking-wide text-on-surface-variant mb-2">
+                                    Password
+                                </label>
+                                <input
+                                    type="password"
+                                    autoComplete="current-password"
+                                    value={passwordInput}
+                                    onChange={(event) => setPasswordInput(event.target.value)}
+                                    placeholder="Enter password"
+                                    className="w-full bg-transparent text-white placeholder:text-on-surface-variant/60 outline-none text-sm"
+                                />
                             </div>
-                        )}
 
-                        <button
-                            onClick={handleUnlock}
-                            disabled={unlocking}
-                            className="w-full h-12 rounded-full flex items-center justify-center gap-2 transition-all duration-300 font-medium tracking-wide text-[14px] border border-white/5 bg-primary hover:bg-primary-400 hover:shadow-purple-glow-button active:scale-[0.98] text-black disabled:opacity-70"
-                        >
-                            {unlocking ? (
-                                <>
-                                    <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                                    Unlocking...
-                                </>
-                            ) : (
-                                <>
-                                    <span className="material-symbols-outlined text-[20px]">lock_open</span>
-                                    Unlock File
-                                </>
+                            {unlockError && (
+                                <div className="text-sm text-red-400">
+                                    {unlockError}
+                                </div>
                             )}
-                        </button>
+
+                            <button
+                                type="submit"
+                                disabled={unlocking}
+                                className="w-full h-12 rounded-full flex items-center justify-center gap-2 transition-all duration-300 font-medium tracking-wide text-[14px] border border-white/5 bg-primary hover:bg-primary-400 hover:shadow-purple-glow-button active:scale-[0.98] text-black disabled:opacity-70"
+                            >
+                                {unlocking ? (
+                                    <>
+                                        <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                                        Unlocking...
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="material-symbols-outlined text-[20px]">lock_open</span>
+                                        Unlock File
+                                    </>
+                                )}
+                            </button>
+                        </form>
                     </div>
                 </main>
             </div>
@@ -392,10 +410,10 @@ export default function SharePage() {
 
                     {/* Download Button */}
                     <button
-                        onClick={!downloadComplete && !limitReached ? handleDownload : undefined}
+                        onClick={!limitReached ? handleDownload : undefined}
                         disabled={downloading || limitReached}
                         className={`w-full h-12 rounded-full flex items-center justify-center gap-2 transition-all duration-300 font-medium tracking-wide text-[14px] border border-white/5 ${downloadComplete
-                                ? 'bg-green-600 text-white cursor-default'
+                                ? 'bg-green-600 text-white'
                                 : limitReached
                                     ? 'bg-red-900/40 text-red-300 cursor-not-allowed'
                                 : 'bg-primary hover:bg-primary-400 hover:shadow-purple-glow-button active:scale-[0.98] text-black'
@@ -408,8 +426,8 @@ export default function SharePage() {
                             </>
                         ) : downloadComplete ? (
                             <>
-                                <span className="material-symbols-outlined text-[20px] icon-filled">check_circle</span>
-                                Download Complete
+                                <span className="material-symbols-outlined text-[20px]">download</span>
+                                Download Again
                             </>
                         ) : limitReached ? (
                             <>

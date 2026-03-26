@@ -14,16 +14,18 @@ dotenv.config()
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const OBJECT_KEY_REGEX = /^files\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.enc$/i
-const UPLOAD_ID_REGEX = /^[a-zA-Z0-9._-]+$/
 
-function getR2Config() {
+export function validateR2Config(env = process.env) {
     const requiredR2Vars = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']
-    const missingVars = requiredR2Vars.filter(v => !process.env[v])
+    const missingVars = requiredR2Vars.filter(v => !env[v])
 
     if (missingVars.length > 0) {
         throw new Error(`Missing required R2 env vars: ${missingVars.join(', ')}`)
     }
+}
 
+function getR2Config() {
+    validateR2Config()
     return {
         client: new S3Client({
             region: 'auto',
@@ -95,8 +97,8 @@ export async function getPresignedPartUrl(objectKey, uploadId, partNumber) {
     if (!Number.isInteger(partNumber) || partNumber < 1) {
         throw new Error('Invalid partNumber: must be integer > 0')
     }
-    if (!uploadId || typeof uploadId !== 'string' || !UPLOAD_ID_REGEX.test(uploadId)) {
-        throw new Error('Invalid uploadId: must be non-empty alphanumeric token')
+    if (typeof uploadId !== 'string' || uploadId.trim().length === 0) {
+        throw new Error('Invalid uploadId: must be a non-empty string')
     }
 
     const command = new UploadPartCommand({

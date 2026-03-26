@@ -143,7 +143,7 @@
   filter: blur(120px);
 }
 
-  .ambient-glow::after {
+.ambient-glow::after {
   content: '';
   position: absolute;
   bottom: -10%;
@@ -155,7 +155,7 @@
   filter: blur(100px);
 }
 
-@keyframes fadeInUp {
+@keyframes fade-in-up {
   from {
     opacity: 0;
     transform: translateY(20px);
@@ -167,5 +167,5 @@
 }
 
 .fade-in-up {
-  animation: fadeInUp 0.5s ease-out forwards;
+  animation: fade-in-up 0.5s ease-out forwards;
 }

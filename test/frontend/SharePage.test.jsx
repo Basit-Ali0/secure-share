@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { vi } from 'vitest'
 import SharePage from '../../src/pages/SharePage.jsx'
+import { downloadAndDecryptStreaming } from '../../src/utils/streamingEncryption'
 
 vi.mock('../../src/utils/streamingEncryption', () => ({
     downloadAndDecryptStreaming: vi.fn(async () => {}),
@@ -22,12 +23,19 @@ function renderSharePage(route = '/s/Short123#key=test-key&iv=test-iv') {
 
 describe('SharePage', () => {
     beforeEach(() => {
+        vi.clearAllMocks()
         vi.restoreAllMocks()
         vi.spyOn(window, 'alert').mockImplementation(() => {})
     })
 
+    afterEach(() => {
+        vi.useRealTimers()
+        vi.unstubAllGlobals()
+        vi.restoreAllMocks()
+    })
+
     it('renders the locked screen for protected metadata without crashing', async () => {
-        global.fetch = vi.fn(async () => ({
+        vi.stubGlobal('fetch', vi.fn(async () => ({
             ok: true,
             json: async () => ({
                 file_id: '123',
@@ -36,7 +44,7 @@ describe('SharePage', () => {
                 is_password_protected: true,
                 is_download_limited: false,
             }),
-        }))
+        })))
 
         renderSharePage()
         expect(await screen.findByText(/protected share link/i)).toBeInTheDocument()
@@ -44,7 +52,7 @@ describe('SharePage', () => {
     })
 
     it('unlocks and reveals file details', async () => {
-        global.fetch = vi
+        vi.stubGlobal('fetch', vi
             .fn()
             .mockResolvedValueOnce({
                 ok: true,
@@ -73,7 +81,7 @@ describe('SharePage', () => {
                     remaining_downloads: null,
                     is_password_protected: true,
                 }),
-            })
+            }))
 
         renderSharePage()
         await screen.findByText(/protected share link/i)
@@ -84,7 +92,7 @@ describe('SharePage', () => {
     })
 
     it('disables download when the limit is exhausted', async () => {
-        global.fetch = vi.fn(async () => ({
+        vi.stubGlobal('fetch', vi.fn(async () => ({
             ok: true,
             json: async () => ({
                 file_id: '123',
@@ -101,7 +109,7 @@ describe('SharePage', () => {
                 remaining_downloads: 0,
                 is_password_protected: false,
             }),
-        }))
+        })))
 
         renderSharePage()
         const button = await screen.findByRole('button', { name: /download limit reached/i })
@@ -109,7 +117,7 @@ describe('SharePage', () => {
     })
 
     it('surfaces authorize-download errors', async () => {
-        global.fetch = vi
+        vi.stubGlobal('fetch', vi
             .fn()
             .mockResolvedValueOnce({
                 ok: true,
@@ -132,7 +140,7 @@ describe('SharePage', () => {
             .mockResolvedValueOnce({
                 ok: false,
                 json: async () => ({ message: 'Download limit reached' }),
-            })
+            }))
 
         renderSharePage()
         fireEvent.click(await screen.findByRole('button', { name: /decrypt & download/i }))
@@ -141,4 +149,51 @@ describe('SharePage', () => {
             expect(window.alert).toHaveBeenCalledWith('Download failed: Download limit reached')
         })
     })
+
+    it('keeps download action available after a successful download when quota remains', async () => {
+        vi.stubGlobal('fetch', vi
+            .fn()
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    file_id: '123',
+                    short_id: 'Short123',
+                    original_name: 'secret.txt',
+                    file_size: 12,
+                    file_type: 'text/plain',
+                    storage_path: 'files/secret.enc',
+                    chunk_count: 1,
+                    chunk_sizes: null,
+                    expires_at: '2099-01-01T00:00:00.000Z',
+                    download_count: 0,
+                    max_downloads: 2,
+                    remaining_downloads: 2,
+                    is_password_protected: false,
+                }),
+            })
+            .mockResolvedValue({
+                ok: true,
+                json: async () => ({
+                    success: true,
+                    presignedUrl: 'https://download.example/file',
+                    downloadCount: 1,
+                    maxDownloads: 2,
+                    remainingDownloads: 1,
+                }),
+            }))
+
+        renderSharePage()
+        const initialButton = await screen.findByRole('button', { name: /decrypt & download/i })
+        fireEvent.click(initialButton)
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /download again/i })).toBeEnabled()
+        }, { timeout: 2500 })
+
+        fireEvent.click(screen.getByRole('button', { name: /download again/i }))
+
+        await waitFor(() => {
+            expect(vi.mocked(downloadAndDecryptStreaming)).toHaveBeenCalledTimes(2)
+        })
+    }, 8000)
 })

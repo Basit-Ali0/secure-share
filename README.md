@@ -19,7 +19,7 @@
 
 ## 📖 Overview
 
-**MaskedFile** is a zero-knowledge file sharing platform. Files are encrypted in the browser with **AES-256-GCM** before upload, and the decryption key never reaches the server. The backend stores only ciphertext in **Cloudflare R2** and metadata in **Supabase**.
+**MaskedFile** is a zero-knowledge file-sharing platform. Files are encrypted in the browser with **AES-256-GCM** before upload, and the decryption key never reaches the server. The backend stores only ciphertext in **Cloudflare R2** and metadata in **Supabase**.
 
 The current implementation also adds:
 

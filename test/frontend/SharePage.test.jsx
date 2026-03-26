@@ -150,6 +150,41 @@ describe('SharePage', () => {
         })
     })
 
+    it('syncs local quota state when authorization reports the limit is reached', async () => {
+        vi.stubGlobal('fetch', vi
+            .fn()
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    file_id: '123',
+                    short_id: 'Short123',
+                    original_name: 'secret.txt',
+                    file_size: 12,
+                    file_type: 'text/plain',
+                    storage_path: 'files/secret.enc',
+                    chunk_count: 1,
+                    chunk_sizes: null,
+                    expires_at: '2099-01-01T00:00:00.000Z',
+                    download_count: 1,
+                    max_downloads: 2,
+                    remaining_downloads: 1,
+                    is_password_protected: false,
+                }),
+            })
+            .mockResolvedValueOnce({
+                ok: false,
+                status: 410,
+                json: async () => ({ message: 'Download limit reached' }),
+            }))
+
+        renderSharePage()
+        fireEvent.click(await screen.findByRole('button', { name: /decrypt & download/i }))
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /download limit reached/i })).toBeDisabled()
+        })
+    })
+
     it('keeps download action available after a successful download when quota remains', async () => {
         vi.stubGlobal('fetch', vi
             .fn()

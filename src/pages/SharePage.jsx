@@ -159,6 +159,13 @@ export default function SharePage() {
                 try {
                     const data = await authorizeResponse.json()
                     message = data.message || message
+                    if (authorizeResponse.status === 410 && data.message === 'Download limit reached') {
+                        setMetadata(prev => prev ? {
+                            ...prev,
+                            download_count: prev.max_downloads ?? prev.download_count ?? 0,
+                            remaining_downloads: 0
+                        } : prev)
+                    }
                 } catch {
                     // Ignore non-JSON error payloads
                 }
@@ -412,11 +419,11 @@ export default function SharePage() {
                     <button
                         onClick={!limitReached ? handleDownload : undefined}
                         disabled={downloading || limitReached}
-                        className={`w-full h-12 rounded-full flex items-center justify-center gap-2 transition-all duration-300 font-medium tracking-wide text-[14px] border border-white/5 ${downloadComplete
-                                ? 'bg-green-600 text-white'
-                                : limitReached
-                                    ? 'bg-red-900/40 text-red-300 cursor-not-allowed'
-                                : 'bg-primary hover:bg-primary-400 hover:shadow-purple-glow-button active:scale-[0.98] text-black'
+                        className={`w-full h-12 rounded-full flex items-center justify-center gap-2 transition-all duration-300 font-medium tracking-wide text-[14px] border border-white/5 ${limitReached
+                                ? 'bg-red-900/40 text-red-300 cursor-not-allowed'
+                                : downloadComplete
+                                    ? 'bg-green-600 text-white'
+                                    : 'bg-primary hover:bg-primary-400 hover:shadow-purple-glow-button active:scale-[0.98] text-black'
                             }`}
                     >
                         {downloading ? (
@@ -424,15 +431,15 @@ export default function SharePage() {
                                 <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
                                 {downloadStatus} ({Math.round(downloadProgress)}%)
                             </>
-                        ) : downloadComplete ? (
-                            <>
-                                <span className="material-symbols-outlined text-[20px]">download</span>
-                                Download Again
-                            </>
                         ) : limitReached ? (
                             <>
                                 <span className="material-symbols-outlined text-[20px]">block</span>
                                 Download Limit Reached
+                            </>
+                        ) : downloadComplete ? (
+                            <>
+                                <span className="material-symbols-outlined text-[20px]">download</span>
+                                Download Again
                             </>
                         ) : (
                             <>

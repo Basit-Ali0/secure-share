@@ -19,6 +19,30 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 const SHORT_ID_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 const SHORT_ID_LENGTH = 8
 const EXHAUSTED_FILE_DELETE_DELAY_MS = 60 * 60 * 1000
+const DEFAULT_SITE_URL = 'https://maskedfile.online'
+const INDEXABLE_HOSTS = new Set(['maskedfile.online', 'www.maskedfile.online'])
+
+function normalizeSiteUrl(value) {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+        return DEFAULT_SITE_URL
+    }
+
+    return value.trim().replace(/\/+$/, '')
+}
+
+function getCanonicalSiteUrl(env) {
+    return normalizeSiteUrl(env.PUBLIC_SITE_URL || env.VITE_SITE_URL)
+}
+
+function getRequestHost(req) {
+    const forwardedHost = req.headers['x-forwarded-host']
+    const hostHeader = Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost || req.get('host') || ''
+    return hostHeader.split(',')[0].trim().split(':')[0].toLowerCase()
+}
+
+function shouldExposeIndexing(req) {
+    return INDEXABLE_HOSTS.has(getRequestHost(req))
+}
 
 function validateRequiredEnv(env) {
     if (!env.VITE_SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) {
@@ -39,6 +63,8 @@ export function createApp(options = {}) {
     const bcryptModule = options.bcryptModule ?? bcrypt
     const timeoutFn = options.setTimeoutFn ?? setTimeout
     const supabase = options.supabase ?? createSupabaseFromEnv(env)
+    const canonicalSiteUrl = getCanonicalSiteUrl(env)
+    const sitemapLastModified = new Date().toISOString()
     const r2 = {
         getPresignedUploadUrl: options.getPresignedUploadUrl ?? getPresignedUploadUrl,
         initiateMultipartUpload: options.initiateMultipartUpload ?? initiateMultipartUpload,
@@ -52,6 +78,12 @@ export function createApp(options = {}) {
         origin: env.CORS_ORIGIN || true,
     }))
     app.use(express.json({ limit: '1mb' }))
+    app.use((req, res, next) => {
+        if (/^\/(share|s)(\/|$)/.test(req.path)) {
+            res.set('X-Robots-Tag', 'noindex, nofollow, noarchive')
+        }
+        next()
+    })
 
     function isUuid(value) {
         return UUID_REGEX.test(value)
@@ -232,6 +264,35 @@ export function createApp(options = {}) {
 
     app.get('/api/health', (req, res) => {
         res.json({ status: 'ok', timestamp: new Date().toISOString() })
+    })
+
+    app.get('/robots.txt', (req, res) => {
+        res.type('text/plain')
+
+        if (!shouldExposeIndexing(req)) {
+            res.send('User-agent: *\nDisallow: /\n')
+            return
+        }
+
+        res.send(`User-agent: *\nAllow: /\n\nSitemap: ${canonicalSiteUrl}/sitemap.xml\n`)
+    })
+
+    app.get('/sitemap.xml', (req, res) => {
+        if (!shouldExposeIndexing(req)) {
+            res.status(404).type('text/plain').send('Not Found')
+            return
+        }
+
+        res.type('application/xml')
+        res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>${canonicalSiteUrl}/</loc>
+    <lastmod>${sitemapLastModified}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>`)
     })
 
     app.post('/api/r2/simple-upload', async (req, res) => {

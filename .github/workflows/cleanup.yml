@@ -2,10 +2,8 @@ name: Cleanup Expired Files
 
 on:
   schedule:
-    # Run every hour at minute 0
     - cron: '0 * * * *'
   workflow_dispatch:
-    # Allow manual trigger from GitHub Actions UI
 
 jobs:
   cleanup:
@@ -13,26 +11,33 @@ jobs:
     steps:
       - name: Trigger cleanup endpoint
         env:
+          CLEANUP_API_URL: ${{ secrets.CLEANUP_API_URL }}
           API_URL: ${{ secrets.API_URL }}
           CLEANUP_SECRET: ${{ secrets.CLEANUP_SECRET }}
         run: |
-          echo "🧹 Triggering cleanup at $(date)"
-          
-          response=$(curl -s -w "\n%{http_code}" -X POST --connect-timeout 10 --max-time 120 "$API_URL/api/cleanup-expired" \
+          base_url="${CLEANUP_API_URL:-$API_URL}"
+
+          if [ -z "$base_url" ]; then
+            echo "Missing CLEANUP_API_URL or API_URL secret"
+            exit 1
+          fi
+
+          echo "Triggering cleanup at $(date)"
+          echo "Using cleanup base URL: $base_url"
+
+          response=$(curl -s -w "\n%{http_code}" -X POST --connect-timeout 10 --max-time 120 "$base_url/api/cleanup-expired" \
             -H "x-cleanup-secret: $CLEANUP_SECRET" \
             -H "Content-Type: application/json")
-          
-          # Extract HTTP status code (last line)
+
           http_code=$(echo "$response" | tail -n1)
-          # Extract response body (all but last line)
           body=$(echo "$response" | sed '$d')
-          
+
           echo "Response: $body"
           echo "Status: $http_code"
-          
+
           if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
-            echo "✅ Cleanup successful"
+            echo "Cleanup successful"
           else
-            echo "❌ Cleanup failed with status $http_code"
+            echo "Cleanup failed with status $http_code"
             exit 1
           fi

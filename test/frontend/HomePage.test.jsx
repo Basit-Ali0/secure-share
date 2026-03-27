@@ -3,6 +3,7 @@ import { HelmetProvider } from 'react-helmet-async'
 import { vi } from 'vitest'
 import HomePage from '../../src/pages/HomePage.jsx'
 import { encryptAndUploadStreaming } from '../../src/utils/streamingEncryption'
+import { buildCanonicalUrl, DEFAULT_TITLE, SITE_NAME } from '../../src/lib/siteConfig.js'
 
 vi.mock('../../src/utils/streamingEncryption', () => ({
     encryptAndUploadStreaming: vi.fn(async () => ({
@@ -101,9 +102,9 @@ describe('HomePage', () => {
         renderHomePage()
 
         await waitFor(() => {
-            expect(document.title).toBe('MaskedFile - Client-Side Encrypted File Sharing')
-            expect(document.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe('https://maskedfile.online/')
-            expect(document.querySelector('meta[property="og:title"]')?.getAttribute('content')).toContain('MaskedFile')
+            expect(document.title).toBe(DEFAULT_TITLE)
+            expect(document.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe(buildCanonicalUrl('/'))
+            expect(document.querySelector('meta[property="og:title"]')?.getAttribute('content')).toContain(SITE_NAME)
         })
     })
 })

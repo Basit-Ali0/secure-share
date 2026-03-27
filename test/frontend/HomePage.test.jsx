@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { HelmetProvider } from 'react-helmet-async'
 import { vi } from 'vitest'
 import HomePage from '../../src/pages/HomePage.jsx'
 import { encryptAndUploadStreaming } from '../../src/utils/streamingEncryption'
+import { buildCanonicalUrl, DEFAULT_TITLE, SITE_NAME } from '../../src/lib/siteConfig.js'
 
 vi.mock('../../src/utils/streamingEncryption', () => ({
     encryptAndUploadStreaming: vi.fn(async () => ({
@@ -35,8 +37,16 @@ describe('HomePage', () => {
         fireEvent.change(input, { target: { files: [file] } })
     }
 
+    function renderHomePage() {
+        return render(
+            <HelmetProvider>
+                <HomePage />
+            </HelmetProvider>
+        )
+    }
+
     it('rejects invalid max-download values', async () => {
-        const { container } = render(<HomePage />)
+        const { container } = renderHomePage()
         selectFile(container)
         const uploadSpy = vi.mocked(encryptAndUploadStreaming)
 
@@ -50,7 +60,7 @@ describe('HomePage', () => {
     })
 
     it('rejects non-integer max-download values', async () => {
-        const { container } = render(<HomePage />)
+        const { container } = renderHomePage()
         selectFile(container)
         const uploadSpy = vi.mocked(encryptAndUploadStreaming)
 
@@ -64,7 +74,7 @@ describe('HomePage', () => {
     })
 
     it('rejects password confirmation mismatch', async () => {
-        const { container } = render(<HomePage />)
+        const { container } = renderHomePage()
         selectFile(container)
         const uploadSpy = vi.mocked(encryptAndUploadStreaming)
 
@@ -79,12 +89,22 @@ describe('HomePage', () => {
     })
 
     it('prefers short links when the backend returns shortId', async () => {
-        const { container } = render(<HomePage />)
+        const { container } = renderHomePage()
         selectFile(container)
 
         fireEvent.click(screen.getByRole('button', { name: /secure & send/i }))
 
         await screen.findByText(/file uploaded successfully/i)
         expect(screen.getByText(/\/s\/Short123#key=key&iv=iv/i)).toBeInTheDocument()
+    })
+
+    it('sets canonical metadata for the home page', async () => {
+        renderHomePage()
+
+        await waitFor(() => {
+            expect(document.title).toBe(DEFAULT_TITLE)
+            expect(document.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe(buildCanonicalUrl('/'))
+            expect(document.querySelector('meta[property="og:title"]')?.getAttribute('content')).toContain(SITE_NAME)
+        })
     })
 })

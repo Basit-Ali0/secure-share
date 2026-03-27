@@ -1,0 +1,4 @@
+User-agent: *
+Disallow: /
+
+# Production serves an environment-aware robots.txt from the Express app.

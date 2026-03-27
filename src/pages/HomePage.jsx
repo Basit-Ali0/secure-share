@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Helmet } from 'react-helmet-async'
 import DragDropZone from '../components/FileUpload/DragDropZone'
 import UploadProgress from '../components/FileUpload/UploadProgress'
 import ExpirySelector, { EXPIRY_OPTIONS } from '../components/FileUpload/ExpirySelector'
@@ -6,6 +7,8 @@ import FilePreviewModal from '../components/FileUpload/FilePreviewModal'
 import QRCode from '../components/SharePage/QRCode'
 import { encryptAndUploadStreaming, terminateWorkerPool } from '../utils/streamingEncryption'
 import { formatFileSize } from '../utils/fileUtils'
+import { buildCanonicalUrl, DEFAULT_DESCRIPTION, DEFAULT_TITLE, OG_IMAGE_URL, SITE_NAME } from '../lib/siteConfig'
+import { trackEvent } from '../lib/analytics'
 
 export default function HomePage() {
     const [selectedFile, setSelectedFile] = useState(null)
@@ -53,6 +56,10 @@ export default function HomePage() {
             setUploading(true)
             setUploadProgress(0)
             setUploadStage('preparing')
+            trackEvent('upload_started', {
+                category: 'engagement',
+                label: selectedFile.type || 'unknown',
+            })
 
             const fileId = crypto.randomUUID()
 
@@ -110,6 +117,10 @@ export default function HomePage() {
             const sharePath = metadataResult.shortId ? `/s/${metadataResult.shortId}` : `/share/${fileId}`
             const url = `${baseUrl}${sharePath}#key=${uploadResult.keyHex}&iv=${uploadResult.ivHex}`
             setShareUrl(url)
+            trackEvent('upload_completed', {
+                category: 'engagement',
+                label: selectedFile.type || 'unknown',
+            })
 
         } catch (error) {
             console.error('Upload error:', error)
@@ -135,6 +146,21 @@ export default function HomePage() {
 
     return (
         <div className="min-h-screen bg-surface relative overflow-hidden">
+            <Helmet>
+                <title>{DEFAULT_TITLE}</title>
+                <meta name="description" content={DEFAULT_DESCRIPTION} />
+                <link rel="canonical" href={buildCanonicalUrl('/')} />
+                <meta property="og:site_name" content={SITE_NAME} />
+                <meta property="og:type" content="website" />
+                <meta property="og:title" content={DEFAULT_TITLE} />
+                <meta property="og:description" content={DEFAULT_DESCRIPTION} />
+                <meta property="og:url" content={buildCanonicalUrl('/')} />
+                <meta property="og:image" content={OG_IMAGE_URL} />
+                <meta name="twitter:card" content="summary_large_image" />
+                <meta name="twitter:title" content={DEFAULT_TITLE} />
+                <meta name="twitter:description" content={DEFAULT_DESCRIPTION} />
+                <meta name="twitter:image" content={OG_IMAGE_URL} />
+            </Helmet>
             {/* Ambient background glow */}
             <div className="ambient-glow" />
 

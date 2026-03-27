@@ -20,7 +20,6 @@ const SHORT_ID_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq
 const SHORT_ID_LENGTH = 8
 const EXHAUSTED_FILE_DELETE_DELAY_MS = 60 * 60 * 1000
 const DEFAULT_SITE_URL = 'https://maskedfile.online'
-const INDEXABLE_HOSTS = new Set(['maskedfile.online', 'www.maskedfile.online'])
 
 function normalizeSiteUrl(value) {
     if (typeof value !== 'string' || value.trim().length === 0) {
@@ -34,14 +33,8 @@ function getCanonicalSiteUrl(env) {
     return normalizeSiteUrl(env.PUBLIC_SITE_URL || env.VITE_SITE_URL)
 }
 
-function getRequestHost(req) {
-    const forwardedHost = req.headers['x-forwarded-host']
-    const hostHeader = Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost || req.get('host') || ''
-    return hostHeader.split(',')[0].trim().split(':')[0].toLowerCase()
-}
-
-function shouldExposeIndexing(req) {
-    return INDEXABLE_HOSTS.has(getRequestHost(req))
+function isIndexingEnabled(env) {
+    return env.INDEXING_ENABLED !== 'false'
 }
 
 function validateRequiredEnv(env) {
@@ -64,6 +57,7 @@ export function createApp(options = {}) {
     const timeoutFn = options.setTimeoutFn ?? setTimeout
     const supabase = options.supabase ?? createSupabaseFromEnv(env)
     const canonicalSiteUrl = getCanonicalSiteUrl(env)
+    const indexingEnabled = isIndexingEnabled(env)
     const sitemapLastModified = new Date().toISOString()
     const r2 = {
         getPresignedUploadUrl: options.getPresignedUploadUrl ?? getPresignedUploadUrl,
@@ -276,7 +270,7 @@ export function createApp(options = {}) {
     app.get('/robots.txt', (req, res) => {
         res.type('text/plain')
 
-        if (!shouldExposeIndexing(req)) {
+        if (!indexingEnabled) {
             res.send('User-agent: *\nDisallow: /\n')
             return
         }
@@ -285,7 +279,7 @@ export function createApp(options = {}) {
     })
 
     app.get('/sitemap.xml', (req, res) => {
-        if (!shouldExposeIndexing(req)) {
+        if (!indexingEnabled) {
             res.status(404).type('text/plain').send('Not Found')
             return
         }

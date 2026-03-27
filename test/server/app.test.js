@@ -357,4 +357,39 @@ describe('server app routes', () => {
         expect(response.status).toBe(410)
         expect(response.body.message).toBe('File has expired')
     })
+
+    it('serves robots.txt and sitemap.xml only for the canonical public host', async () => {
+        const app = createApp({
+            env: {
+                VITE_SUPABASE_URL: 'https://example.supabase.co',
+                SUPABASE_SERVICE_KEY: 'service-role-key',
+            },
+            supabase: createSupabaseMock({}),
+        })
+
+        const publicRobots = await request(app)
+            .get('/robots.txt')
+            .set('Host', 'maskedfile.online')
+        expect(publicRobots.status).toBe(200)
+        expect(publicRobots.text).toContain('Allow: /')
+        expect(publicRobots.text).toContain('Sitemap: https://maskedfile.online/sitemap.xml')
+
+        const publicSitemap = await request(app)
+            .get('/sitemap.xml')
+            .set('Host', 'maskedfile.online')
+        expect(publicSitemap.status).toBe(200)
+        expect(publicSitemap.text).toContain('<loc>https://maskedfile.online/</loc>')
+        expect(publicSitemap.text).toContain('<lastmod>')
+
+        const runAppRobots = await request(app)
+            .get('/robots.txt')
+            .set('Host', 'maskedfile-447590108387.asia-south1.run.app')
+        expect(runAppRobots.status).toBe(200)
+        expect(runAppRobots.text).toBe('User-agent: *\nDisallow: /\n')
+
+        const runAppSitemap = await request(app)
+            .get('/sitemap.xml')
+            .set('Host', 'maskedfile-447590108387.asia-south1.run.app')
+        expect(runAppSitemap.status).toBe(404)
+    })
 })

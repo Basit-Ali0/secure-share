@@ -266,6 +266,13 @@ export function createApp(options = {}) {
         res.json({ status: 'ok', timestamp: new Date().toISOString() })
     })
 
+    app.get('/api/runtime-config', (req, res) => {
+        res.json({
+            siteUrl: canonicalSiteUrl,
+            gaMeasurementId: env.GA_MEASUREMENT_ID || env.VITE_GA_MEASUREMENT_ID || null
+        })
+    })
+
     app.get('/robots.txt', (req, res) => {
         res.type('text/plain')
 

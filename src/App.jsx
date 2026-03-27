@@ -3,16 +3,12 @@ import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import HomePage from './pages/HomePage'
 import SharePage from './pages/SharePage'
-import { trackPageView, isAnalyticsEnabled } from './lib/analytics.js'
+import { trackPageView } from './lib/analytics.js'
 
 function AnalyticsTracker() {
     const location = useLocation()
 
     useEffect(() => {
-        if (!isAnalyticsEnabled()) {
-            return
-        }
-
         trackPageView(`${location.pathname}${location.search}`)
     }, [location.pathname, location.search])
 

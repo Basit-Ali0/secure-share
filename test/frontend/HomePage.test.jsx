@@ -24,6 +24,7 @@ describe('HomePage', () => {
             ok: true,
             json: async () => ({ success: true, fileId: '123', shortId: 'Short123' }),
         })))
+        vi.stubGlobal('scrollTo', vi.fn())
         vi.spyOn(window, 'alert').mockImplementation(() => {})
     })
 
@@ -45,10 +46,15 @@ describe('HomePage', () => {
         )
     }
 
+    async function openAdvancedProtection() {
+        fireEvent.click(await screen.findByRole('button', { name: /advanced protection/i }))
+    }
+
     it('rejects invalid max-download values', async () => {
         const { container } = renderHomePage()
         selectFile(container)
         const uploadSpy = vi.mocked(encryptAndUploadStreaming)
+        await openAdvancedProtection()
 
         fireEvent.change(screen.getByPlaceholderText('Unlimited'), { target: { value: '0' } })
         fireEvent.click(screen.getByRole('button', { name: /secure & send/i }))
@@ -63,6 +69,7 @@ describe('HomePage', () => {
         const { container } = renderHomePage()
         selectFile(container)
         const uploadSpy = vi.mocked(encryptAndUploadStreaming)
+        await openAdvancedProtection()
 
         fireEvent.change(screen.getByPlaceholderText('Unlimited'), { target: { value: '1.9' } })
         fireEvent.click(screen.getByRole('button', { name: /secure & send/i }))
@@ -77,10 +84,11 @@ describe('HomePage', () => {
         const { container } = renderHomePage()
         selectFile(container)
         const uploadSpy = vi.mocked(encryptAndUploadStreaming)
+        await openAdvancedProtection()
 
         fireEvent.change(screen.getByPlaceholderText('Leave blank for no password'), { target: { value: 'abcd1234' } })
         fireEvent.change(screen.getByPlaceholderText('Repeat password'), { target: { value: 'wrong' } })
-        fireEvent.click(screen.getByRole('button', { name: /secure & send/i }))
+        fireEvent.click(await screen.findByRole('button', { name: /secure & send/i }))
 
         await waitFor(() => {
             expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('Password confirmation does not match'))
@@ -92,9 +100,9 @@ describe('HomePage', () => {
         const { container } = renderHomePage()
         selectFile(container)
 
-        fireEvent.click(screen.getByRole('button', { name: /secure & send/i }))
+        fireEvent.click(await screen.findByRole('button', { name: /secure & send/i }))
 
-        await screen.findByText(/file uploaded successfully/i)
+        await screen.findByText(/secure share ready/i)
         expect(screen.getByText(/\/s\/Short123#key=key&iv=iv/i)).toBeInTheDocument()
     })
 

@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { formatFileSize, getFileIcon } from '../utils/fileUtils'
+import { formatFileSize } from '../utils/fileUtils'
 import { downloadAndDecryptStreaming, terminateWorkerPool } from '../utils/streamingEncryption'
 import QRCode from '../components/SharePage/QRCode'
 import { OG_IMAGE_URL, SITE_NAME } from '../lib/siteConfig'
@@ -25,6 +25,15 @@ function ShareHelmet({ title, description, url }) {
             <meta name="twitter:description" content={description} />
             <meta name="twitter:image" content={OG_IMAGE_URL} />
         </Helmet>
+    )
+}
+
+function ShareStat({ label, value, accent = 'text-white' }) {
+    return (
+        <div className="flex flex-col items-center justify-center gap-1 px-3 py-4 text-center">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-on-surface-variant">{label}</p>
+            <p className={`text-base font-medium ${accent}`}>{value}</p>
+        </div>
     )
 }
 
@@ -312,7 +321,7 @@ export default function SharePage() {
                         <div className="space-y-2">
                             <h1 className="text-2xl font-medium text-white">Protected Share Link</h1>
                             <p className="text-sm text-on-surface-variant">
-                                Enter the password to reveal the file details and authorize downloads.
+                                Enter the password to reveal file details and authorize the secure download.
                             </p>
                         </div>
 
@@ -370,6 +379,10 @@ export default function SharePage() {
                                 )}
                             </button>
                         </form>
+
+                        <div className="rounded-2xl border border-outline-variant bg-surface-container-high/70 px-4 py-3 text-xs text-on-surface-variant">
+                            File details stay hidden until the correct password unlocks this share.
+                        </div>
                     </div>
                 </main>
             </div>
@@ -397,10 +410,8 @@ export default function SharePage() {
 
             {/* Main Content */}
             <main className="relative z-10 flex flex-col items-center justify-center px-4 py-8 md:py-16">
-                {/* Download Card */}
-                <div className="w-full max-w-[400px] glass-card p-6 flex flex-col items-center gap-6 card-hover">
-                    {/* File Icon with Encrypted Badge */}
-                    <div className="relative w-full flex justify-center pt-2 pb-1">
+                <div className="w-full max-w-[420px] glass-card p-6 flex flex-col gap-6 card-hover">
+                    <div className="relative flex justify-center pt-2">
                         <div className="w-16 h-16 rounded-2xl bg-primary-container flex items-center justify-center text-primary-200 shadow-inner border border-outline/20">
                             <span className="material-symbols-outlined text-[32px]">description</span>
                         </div>
@@ -410,67 +421,38 @@ export default function SharePage() {
                         </div>
                     </div>
 
-                    {/* File Info */}
-                    <div className="text-center w-full space-y-2 mt-2">
+                    <div className="text-center space-y-2 pt-2">
                         <h1 className="text-[22px] leading-7 font-normal text-white break-words">
                             {metadata.original_name}
                         </h1>
-                        <div className="flex items-center justify-center gap-3 text-sm text-on-surface-variant font-normal tracking-wide">
-                            <span className="bg-surface-variant/50 border border-outline-variant px-2 py-0.5 rounded-md text-gray-300">
-                                {fileSize}
-                            </span>
-                            <span className="bg-surface-variant/50 border border-outline-variant px-2 py-0.5 rounded-md text-gray-300">
-                                {fileExt}
-                            </span>
+                        <div className="flex items-center justify-center gap-2 text-sm text-on-surface-variant">
+                            <span className="rounded-full border border-outline px-3 py-1">{fileSize}</span>
+                            <span className="rounded-full border border-outline px-3 py-1">{fileExt}</span>
                         </div>
                     </div>
 
-                    {/* Stats: Download Count + Expiry */}
-                    <div className="w-full flex items-center justify-center gap-3 text-[12px] text-on-surface-variant">
-                        <div className="flex items-center gap-1.5 bg-surface-variant/30 border border-outline-variant/50 px-3 py-1.5 rounded-lg">
-                            <span className="material-symbols-outlined text-[14px] text-primary">download</span>
-                            <span className="text-gray-300">{downloadCount} downloads</span>
-                        </div>
-                        {maxDownloads != null && (
-                            <div className={`flex items-center gap-1.5 border px-3 py-1.5 rounded-lg ${limitReached
-                                ? 'bg-red-900/20 border-red-500/30'
-                                : 'bg-surface-variant/30 border-outline-variant/50'
-                                }`}>
-                                <span className={`material-symbols-outlined text-[14px] ${limitReached ? 'text-red-400' : 'text-primary'}`}>visibility</span>
-                                <span className={limitReached ? 'text-red-400' : 'text-gray-300'}>
-                                    {remainingDownloads} of {maxDownloads} left
-                                </span>
-                            </div>
-                        )}
-                        {timeLeft !== null && (
-                            <div className={`flex items-center gap-1.5 border px-3 py-1.5 rounded-lg ${timeLeft <= 0
-                                ? 'bg-red-900/20 border-red-500/30'
-                                : timeLeft < 3600000
-                                    ? 'bg-amber-900/20 border-amber-500/30'
-                                    : 'bg-surface-variant/30 border-outline-variant/50'
-                                }`}>
-                                <span className={`material-symbols-outlined text-[14px] ${timeLeft <= 0 ? 'text-red-400' : timeLeft < 3600000 ? 'text-amber-400' : 'text-primary'
-                                    }`}>schedule</span>
-                                <span className={timeLeft <= 0 ? 'text-red-400' : timeLeft < 3600000 ? 'text-amber-400' : 'text-gray-300'}>
-                                    {formatTimeLeft(timeLeft)}
-                                </span>
-                            </div>
-                        )}
+                    <div className="grid grid-cols-3 divide-x divide-outline-variant rounded-[24px] border border-outline-variant bg-surface-container-high">
+                        <ShareStat label="Downloads" value={downloadCount} />
+                        <ShareStat
+                            label="Views left"
+                            value={maxDownloads == null ? 'Unlimited' : `${remainingDownloads} / ${maxDownloads}`}
+                            accent={limitReached ? 'text-red-400' : 'text-primary-200'}
+                        />
+                        <ShareStat
+                            label="Expires in"
+                            value={timeLeft !== null ? formatTimeLeft(timeLeft) : 'Unknown'}
+                            accent={timeLeft !== null && timeLeft <= 0 ? 'text-red-400' : timeLeft !== null && timeLeft < 3600000 ? 'text-amber-400' : 'text-amber-300'}
+                        />
                     </div>
 
-                    {/* Divider */}
-                    <div className="w-full h-px bg-outline-variant/50" />
-
-                    {/* Decryption Key Display (Note) */}
-                    <div className="w-full relative">
-                        <div className="flex items-center gap-3 px-4 py-3 rounded border border-outline text-on-surface-variant text-sm">
-                            <span className="material-symbols-outlined text-primary">key</span>
-                            <span>Decryption key embedded in URL</span>
-                            <span className="material-symbols-outlined text-primary ml-auto">check_circle</span>
-                        </div>
+                    <div className="rounded-2xl border border-outline-variant bg-surface-container-high/70 px-4 py-3 text-sm text-on-surface-variant flex items-center gap-2">
+                        <span className="material-symbols-outlined text-primary">key</span>
+                        <span>Key embedded in URL</span>
+                        <span className="text-on-surface-variant/60">-</span>
+                        <span>Zero-knowledge decryption</span>
+                        <span className="material-symbols-outlined text-primary ml-auto">check_circle</span>
                     </div>
 
-                    {/* Download Button */}
                     <button
                         onClick={!limitReached ? handleDownload : undefined}
                         disabled={downloading || limitReached}
@@ -504,7 +486,6 @@ export default function SharePage() {
                         )}
                     </button>
 
-                    {/* Progress Bar */}
                     {downloading && (
                         <div className="w-full h-1 bg-surface-variant rounded-full overflow-hidden">
                             <div
@@ -514,21 +495,18 @@ export default function SharePage() {
                         </div>
                     )}
 
-                    {/* Security Note */}
-                    <div className="text-center px-4">
+                    <div className="rounded-2xl border border-outline-variant bg-surface-container-high/70 px-4 py-3 text-center">
                         <p className="text-[12px] leading-5 text-on-surface-variant">
-                            Zero-knowledge encryption ensures your data remains private.
+                            Decrypted only in your browser. Secure, private, and never exposed to the server.
                         </p>
                     </div>
                 </div>
 
-                {/* Security Badge */}
                 <div className="flex items-center justify-center gap-2 text-on-surface-variant/70 mt-6">
                     <span className="material-symbols-outlined text-[16px]">verified_user</span>
                     <span className="text-[12px] font-medium tracking-wide">Secure Browser Decryption</span>
                 </div>
 
-                {/* QR Code Toggle */}
                 <button
                     onClick={() => setShowQR(!showQR)}
                     className="mt-6 btn-secondary text-sm flex items-center gap-2"

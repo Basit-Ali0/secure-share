@@ -3,10 +3,16 @@ import { HelmetProvider } from 'react-helmet-async'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { vi } from 'vitest'
 import SharePage from '../../src/pages/SharePage.jsx'
-import { downloadAndDecryptStreaming } from '../../src/utils/streamingEncryption'
+import {
+    deriveCollectionItemMaterial,
+    downloadAndDecryptManifest,
+    downloadAndDecryptStreaming
+} from '../../src/utils/streamingEncryption'
 
 vi.mock('../../src/utils/streamingEncryption', () => ({
     downloadAndDecryptStreaming: vi.fn(async () => {}),
+    downloadAndDecryptManifest: vi.fn(async () => ({ files: [] })),
+    deriveCollectionItemMaterial: vi.fn(async () => ({ keyHex: 'item-key', ivHex: 'item-iv' })),
     terminateWorkerPool: vi.fn(),
 }))
 
@@ -29,6 +35,61 @@ describe('SharePage', () => {
         vi.clearAllMocks()
         vi.restoreAllMocks()
         vi.spyOn(window, 'alert').mockImplementation(() => {})
+    })
+
+    it('reveals collection contents for multi-file shares', async () => {
+        vi.stubGlobal('fetch', vi
+            .fn()
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    file_id: '123',
+                    short_id: 'Short123',
+                    share_kind: 'multi',
+                    file_count: 2,
+                    total_size: 32,
+                    expires_at: '2099-01-01T00:00:00.000Z',
+                    download_count: 0,
+                    max_downloads: 2,
+                    remaining_downloads: 2,
+                    is_password_protected: false,
+                }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    success: true,
+                    shareKind: 'multi',
+                    fileId: '123',
+                    manifestPresignedUrl: 'https://download.example/manifest',
+                    manifestChunkCount: 1,
+                    manifestChunkSizes: null,
+                    sessionToken: 'session-token',
+                    downloadCount: 1,
+                    maxDownloads: 2,
+                    remainingDownloads: 1,
+                }),
+            }))
+        vi.mocked(downloadAndDecryptManifest).mockResolvedValueOnce({
+            files: [
+                {
+                    itemId: '11111111-1111-1111-1111-111111111111',
+                    name: 'one.txt',
+                    relativePath: 'one.txt',
+                    size: 12,
+                    type: 'text/plain',
+                    ivHex: 'abcdef',
+                    chunkCount: 1,
+                    chunkSizes: null
+                }
+            ]
+        })
+
+        renderSharePage('/s/Short123#key=test-key')
+        fireEvent.click(await screen.findByRole('button', { name: /reveal files/i }))
+
+        expect(await screen.findByText('Collection contents')).toBeInTheDocument()
+        expect(screen.getByText('one.txt')).toBeInTheDocument()
     })
 
     afterEach(() => {

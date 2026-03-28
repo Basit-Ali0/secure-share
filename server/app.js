@@ -12,6 +12,15 @@ import {
     getPresignedDownloadUrl,
     deleteObject
 } from './r2.js'
+import {
+    SHARE_KIND_MULTI,
+    SHARE_KIND_SINGLE,
+    normalizeShareKind,
+    buildCollectionItemObjectKey,
+    buildCollectionManifestObjectKey,
+    buildCollectionSummaryName,
+    isValidCollectionItemId
+} from '../shared/collectionShare.js'
 
 dotenv.config()
 
@@ -19,6 +28,8 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 const SHORT_ID_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 const SHORT_ID_LENGTH = 8
 const EXHAUSTED_FILE_DELETE_DELAY_MS = 60 * 60 * 1000
+const DOWNLOAD_SESSION_TTL_MS = 2 * 60 * 60 * 1000
+const ROLLBACK_TOKEN_TTL_MS = 2 * 60 * 60 * 1000
 const DEFAULT_SITE_URL = 'https://maskedfile.online'
 
 function normalizeSiteUrl(value) {
@@ -81,6 +92,175 @@ export function createApp(options = {}) {
 
     function isUuid(value) {
         return UUID_REGEX.test(value)
+    }
+
+    function getShareKind(file) {
+        return normalizeShareKind(file?.share_kind)
+    }
+
+    function isMultiShare(file) {
+        return getShareKind(file) === SHARE_KIND_MULTI
+    }
+
+    function getCollectionFileCount(file) {
+        if (Number.isInteger(file?.file_count) && file.file_count > 0) {
+            return file.file_count
+        }
+
+        return 1
+    }
+
+    function getCollectionTotalSize(file) {
+        if (typeof file?.total_size === 'number' && Number.isFinite(file.total_size)) {
+            return file.total_size
+        }
+
+        return file?.file_size ?? null
+    }
+
+    function getCollectionSummaryResponse(file) {
+        return {
+            file_id: file.file_id,
+            short_id: file.short_id,
+            share_kind: SHARE_KIND_MULTI,
+            file_count: getCollectionFileCount(file),
+            total_size: getCollectionTotalSize(file),
+            expires_at: file.expires_at,
+            created_at: file.created_at,
+            download_count: file.download_count ?? 0,
+            max_downloads: file.max_downloads,
+            remaining_downloads: getRemainingDownloads(file),
+            is_download_limited: file.max_downloads != null,
+            is_password_protected: Boolean(file.password_hash)
+        }
+    }
+
+    function encodeBase64Url(value) {
+        return Buffer.from(value)
+            .toString('base64')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=+$/g, '')
+    }
+
+    function decodeBase64Url(value) {
+        const normalized = value.replace(/-/g, '+').replace(/_/g, '/')
+        const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4))
+        return Buffer.from(`${normalized}${padding}`, 'base64')
+    }
+
+    function createDownloadSessionToken(file) {
+        const secret = env.DOWNLOAD_SESSION_SECRET
+        if (!secret) {
+            throw new Error('DOWNLOAD_SESSION_SECRET is required for multi-file downloads')
+        }
+
+        const now = Date.now()
+        const payload = JSON.stringify({
+            shareId: file.file_id,
+            shareKind: SHARE_KIND_MULTI,
+            iat: now,
+            exp: now + DOWNLOAD_SESSION_TTL_MS
+        })
+        const payloadToken = encodeBase64Url(payload)
+        const signature = encodeBase64Url(
+            cryptoModule.createHmac('sha256', secret).update(payloadToken).digest()
+        )
+
+        return `${payloadToken}.${signature}`
+    }
+
+    function getRollbackSecret() {
+        return env.INTERNAL_CLEANUP_SECRET || env.CLEANUP_SECRET
+    }
+
+    function verifySignedToken(token, expectedPayload, secret, invalidMessage, expiredMessage) {
+        if (typeof token !== 'string') {
+            throw new Error(invalidMessage)
+        }
+
+        const [payloadToken, signatureToken] = token.split('.')
+        if (!payloadToken || !signatureToken) {
+            throw new Error(invalidMessage)
+        }
+
+        const expectedSignature = encodeBase64Url(
+            cryptoModule.createHmac('sha256', secret).update(payloadToken).digest()
+        )
+        const signatureBuffer = Buffer.from(signatureToken, 'base64url')
+        const expectedBuffer = Buffer.from(expectedSignature, 'base64url')
+
+        if (
+            signatureBuffer.length !== expectedBuffer.length ||
+            !cryptoModule.timingSafeEqual(signatureBuffer, expectedBuffer)
+        ) {
+            throw new Error(invalidMessage)
+        }
+
+        const payload = JSON.parse(decodeBase64Url(payloadToken).toString('utf8'))
+        if (!expectedPayload(payload)) {
+            throw new Error(invalidMessage)
+        }
+
+        if (typeof payload.exp !== 'number' || payload.exp <= Date.now()) {
+            throw new Error(expiredMessage)
+        }
+
+        return payload
+    }
+
+    function createRollbackToken(objectKey) {
+        const secret = getRollbackSecret()
+        if (!secret) {
+            throw new Error('Rollback secret is not configured')
+        }
+
+        const now = Date.now()
+        const payload = JSON.stringify({
+            objectKey,
+            iat: now,
+            exp: now + ROLLBACK_TOKEN_TTL_MS
+        })
+        const payloadToken = encodeBase64Url(payload)
+        const signature = encodeBase64Url(
+            cryptoModule.createHmac('sha256', secret).update(payloadToken).digest()
+        )
+
+        return `${payloadToken}.${signature}`
+    }
+
+    function verifyDownloadSessionToken(token, expectedShareId) {
+        const secret = env.DOWNLOAD_SESSION_SECRET
+        if (!secret) {
+            throw new Error('DOWNLOAD_SESSION_SECRET is required for multi-file downloads')
+        }
+
+        if (typeof token !== 'string') {
+            throw new Error('sessionToken is required')
+        }
+
+        return verifySignedToken(
+            token,
+            (payload) => payload.shareKind === SHARE_KIND_MULTI && payload.shareId === expectedShareId,
+            secret,
+            'Invalid session token',
+            'Download session has expired'
+        )
+    }
+
+    function verifyRollbackToken(token, objectKey) {
+        const secret = getRollbackSecret()
+        if (!secret) {
+            throw new Error('Rollback secret is not configured')
+        }
+
+        return verifySignedToken(
+            token,
+            (payload) => payload.objectKey === objectKey,
+            secret,
+            'Invalid rollback token',
+            'Rollback token has expired'
+        )
     }
 
     function generateShortId(length = SHORT_ID_LENGTH) {
@@ -150,8 +330,15 @@ export function createApp(options = {}) {
     }
 
     function formatMetadataResponse(file) {
+        if (isMultiShare(file)) {
+            return getCollectionSummaryResponse(file)
+        }
+
         const baseResponse = {
             ...file,
+            share_kind: SHARE_KIND_SINGLE,
+            file_count: 1,
+            total_size: file.file_size,
             file_id: file.file_id,
             short_id: file.short_id,
             original_name: file.original_name,
@@ -175,9 +362,19 @@ export function createApp(options = {}) {
     }
 
     function formatProtectedMetadataResponse(file) {
+        if (isMultiShare(file)) {
+            return {
+                ...getCollectionSummaryResponse(file),
+                is_password_protected: true
+            }
+        }
+
         return {
             file_id: file.file_id,
             short_id: file.short_id,
+            share_kind: SHARE_KIND_SINGLE,
+            file_count: 1,
+            total_size: file.file_size ?? null,
             expires_at: file.expires_at,
             created_at: file.created_at,
             is_password_protected: true,
@@ -219,6 +416,95 @@ export function createApp(options = {}) {
         return NaN
     }
 
+    function parsePositiveIntegerRequired(value, fieldName) {
+        if (!Number.isInteger(value) || value < 1) {
+            throw new Error(`${fieldName} must be a whole number greater than 0`)
+        }
+
+        return value
+    }
+
+    function isPositiveFiniteNumber(value) {
+        return typeof value === 'number' && Number.isFinite(value) && value > 0
+    }
+
+    function validateChunkMetadata(chunkCount, chunkSizes, fieldLabel) {
+        parsePositiveIntegerRequired(chunkCount, `${fieldLabel}Count`)
+
+        if (chunkSizes == null) {
+            if (chunkCount > 1) {
+                throw new Error(`${fieldLabel}Sizes must provide one positive size per chunk when ${fieldLabel}Count is greater than 1`)
+            }
+            return null
+        }
+
+        if (!Array.isArray(chunkSizes)) {
+            throw new Error(`${fieldLabel}Sizes must be an array when provided`)
+        }
+
+        if (chunkSizes.length !== chunkCount) {
+            throw new Error(`${fieldLabel}Sizes must contain exactly ${chunkCount} entries`)
+        }
+
+        if (!chunkSizes.every(isPositiveFiniteNumber)) {
+            throw new Error(`${fieldLabel}Sizes must contain only positive numbers`)
+        }
+
+        return chunkSizes
+    }
+
+    async function deleteShareObjects(file) {
+        if (file.storage_backend !== 'r2') {
+            const objectPaths = []
+            if (file.storage_path) {
+                objectPaths.push(file.storage_path)
+            }
+            if (isMultiShare(file) && file.manifest_storage_path && file.manifest_storage_path !== file.storage_path) {
+                objectPaths.push(file.manifest_storage_path)
+            }
+            if (objectPaths.length > 0) {
+                await supabase.storage.from('encrypted-files').remove(objectPaths)
+            }
+            return
+        }
+
+        if (isMultiShare(file)) {
+            await r2.deleteObject(file.manifest_storage_path || buildCollectionManifestObjectKey(file.file_id))
+            await Promise.all(
+                (file.collection_item_ids || []).map((itemId) =>
+                    r2.deleteObject(buildCollectionItemObjectKey(file.file_id, itemId))
+                )
+            )
+            return
+        }
+
+        await r2.deleteObject(file.storage_path)
+    }
+
+    function assertInternalSecret(req, res, contextLabel) {
+        const configuredSecret = getRollbackSecret()
+        if (!configuredSecret) {
+            console.error(`[${contextLabel}] Internal secret is not configured`)
+            res.status(500).json({ message: 'Internal secret is not configured' })
+            return false
+        }
+
+        const providedSecret = req.headers['x-internal-secret'] || req.headers['x-cleanup-secret']
+        if (typeof providedSecret !== 'string' || providedSecret.length === 0) {
+            console.warn(`[${contextLabel}] Rejected request with missing internal secret`)
+            res.status(401).json({ message: 'Missing internal secret' })
+            return false
+        }
+
+        if (providedSecret !== configuredSecret) {
+            console.warn(`[${contextLabel}] Rejected request with invalid internal secret`)
+            res.status(403).json({ message: 'Invalid internal secret' })
+            return false
+        }
+
+        return true
+    }
+
     function scheduleExhaustedFileDeletion(file) {
         if (!file?.file_id || scheduledDeletionTimers.has(file.file_id)) {
             return
@@ -226,13 +512,7 @@ export function createApp(options = {}) {
 
         const timer = timeoutFn(async () => {
             try {
-                if (file.storage_backend === 'r2') {
-                    await r2.deleteObject(file.storage_path)
-                } else {
-                    await supabase.storage
-                        .from('encrypted-files')
-                        .remove([file.storage_path])
-                }
+                await deleteShareObjects(file)
 
                 const { error } = await supabase
                     .from('files')
@@ -298,14 +578,17 @@ export function createApp(options = {}) {
 
     app.post('/api/r2/simple-upload', async (req, res) => {
         try {
-            const { fileId } = req.body
+            const { fileId, objectKey } = req.body
 
-            if (!fileId) {
-                return res.status(400).json({ message: 'fileId required' })
+            if (!fileId && !objectKey) {
+                return res.status(400).json({ message: 'fileId or objectKey required' })
             }
 
-            const result = await r2.getPresignedUploadUrl(fileId)
-            res.json(result)
+            const result = await r2.getPresignedUploadUrl(objectKey || fileId)
+            res.json({
+                ...result,
+                rollbackToken: createRollbackToken(result.objectKey)
+            })
         } catch (error) {
             console.error('[R2 Simple Upload] Error:', error)
             res.status(500).json({ message: error.message })
@@ -314,14 +597,17 @@ export function createApp(options = {}) {
 
     app.post('/api/r2/initiate', async (req, res) => {
         try {
-            const { fileId } = req.body
+            const { fileId, objectKey } = req.body
 
-            if (!fileId) {
-                return res.status(400).json({ message: 'fileId required' })
+            if (!fileId && !objectKey) {
+                return res.status(400).json({ message: 'fileId or objectKey required' })
             }
 
-            const result = await r2.initiateMultipartUpload(fileId)
-            res.json(result)
+            const result = await r2.initiateMultipartUpload(objectKey || fileId)
+            res.json({
+                ...result,
+                rollbackToken: createRollbackToken(result.objectKey)
+            })
         } catch (error) {
             console.error('[R2 Initiate] Error:', error)
             res.status(500).json({ message: error.message })
@@ -360,6 +646,64 @@ export function createApp(options = {}) {
         }
     })
 
+    app.post('/api/r2/delete-objects', async (req, res) => {
+        try {
+            const rollbackEntries = Array.isArray(req.body?.objects)
+                ? req.body.objects.filter((value) =>
+                    value &&
+                    typeof value.objectKey === 'string' &&
+                    value.objectKey.length > 0 &&
+                    typeof value.rollbackToken === 'string' &&
+                    value.rollbackToken.length > 0
+                )
+                : []
+
+            let objectKeys = []
+            if (rollbackEntries.length > 0) {
+                for (const entry of rollbackEntries) {
+                    verifyRollbackToken(entry.rollbackToken, entry.objectKey)
+                }
+                objectKeys = rollbackEntries.map((entry) => entry.objectKey)
+            } else {
+                if (!assertInternalSecret(req, res, 'R2 Delete Objects')) {
+                    return
+                }
+
+                objectKeys = Array.isArray(req.body?.objectKeys)
+                    ? req.body.objectKeys.filter((value) => typeof value === 'string' && value.length > 0)
+                    : []
+
+                if (objectKeys.length === 0) {
+                    return res.status(400).json({ message: 'objectKeys is required' })
+                }
+            }
+
+            const deleted = []
+            const failed = []
+
+            for (const objectKey of objectKeys) {
+                try {
+                    await r2.deleteObject(objectKey)
+                    deleted.push(objectKey)
+                } catch (error) {
+                    failed.push({ objectKey, message: error.message })
+                }
+            }
+
+            res.json({
+                success: failed.length === 0,
+                deleted,
+                failed
+            })
+        } catch (error) {
+            console.error('[R2 Delete Objects] Error:', error)
+            const status = error.message === 'Invalid rollback token' || error.message === 'Rollback token has expired'
+                ? 401
+                : 500
+            res.status(status).json({ message: error.message })
+        }
+    })
+
     app.get('/api/r2/download/*', async (req, res) => {
         res.status(410).json({ message: 'Direct downloads are disabled. Authorize downloads via /api/files/:identifier/authorize-download.' })
     })
@@ -368,6 +712,7 @@ export function createApp(options = {}) {
         try {
             const {
                 fileId,
+                shareKind,
                 originalName,
                 fileType,
                 fileSize,
@@ -375,13 +720,93 @@ export function createApp(options = {}) {
                 storageBackend,
                 chunkCount,
                 chunkSizes,
+                fileCount,
+                totalSize,
+                manifestStoragePath,
+                manifestChunkCount,
+                manifestChunkSizes,
+                collectionItemIds,
                 expiresAt,
                 maxDownloads,
                 password
             } = req.body
 
+            const normalizedShareKind = normalizeShareKind(shareKind)
+
             if (!isUuid(fileId)) {
                 return res.status(400).json({ message: 'fileId must be a valid UUID' })
+            }
+
+            if (!isFutureDateString(expiresAt)) {
+                return res.status(400).json({ message: 'expiresAt must be a valid future date' })
+            }
+
+            const parsedMaxDownloads = parsePositiveIntegerInput(maxDownloads)
+            if (Number.isNaN(parsedMaxDownloads)) {
+                return res.status(400).json({ message: 'maxDownloads must be a whole number greater than 0' })
+            }
+
+            const normalizedPassword = normalizeOptionalPassword(password)
+            const passwordHash = normalizedPassword
+                ? await bcryptModule.hash(normalizedPassword, 10)
+                : null
+
+            const normalizedExpiresAt = new Date(expiresAt).toISOString()
+            const normalizedStorageBackend = storageBackend || 'r2'
+            const baseRecord = {
+                file_id: fileId,
+                share_kind: normalizedShareKind,
+                expires_at: normalizedExpiresAt,
+                max_downloads: parsedMaxDownloads,
+                password_hash: passwordHash,
+                storage_backend: normalizedStorageBackend
+            }
+
+            if (normalizedShareKind === SHARE_KIND_MULTI) {
+                if (typeof manifestStoragePath !== 'string' || manifestStoragePath.length === 0) {
+                    return res.status(400).json({ message: 'manifestStoragePath is required for multi-file shares' })
+                }
+
+                if (typeof totalSize !== 'number' || !Number.isFinite(totalSize) || totalSize < 0) {
+                    return res.status(400).json({ message: 'totalSize must be a non-negative number' })
+                }
+
+                try {
+                    parsePositiveIntegerRequired(fileCount, 'fileCount')
+                } catch (validationError) {
+                    return res.status(400).json({ message: validationError.message })
+                }
+                if (!Array.isArray(collectionItemIds) || collectionItemIds.length !== fileCount) {
+                    return res.status(400).json({ message: 'collectionItemIds must be an array matching fileCount for multi-file shares' })
+                }
+                if (!collectionItemIds.every(isValidCollectionItemId)) {
+                    return res.status(400).json({ message: 'collectionItemIds must contain valid opaque item ids' })
+                }
+
+                let normalizedManifestChunkSizes
+                try {
+                    normalizedManifestChunkSizes = validateChunkMetadata(manifestChunkCount, manifestChunkSizes, 'manifestChunk')
+                } catch (validationError) {
+                    return res.status(400).json({ message: validationError.message })
+                }
+
+                const shortId = await insertFileMetadataWithShortId({
+                    ...baseRecord,
+                    original_name: buildCollectionSummaryName(fileCount),
+                    file_type: 'application/x.maskedfile-collection',
+                    file_size: totalSize,
+                    storage_path: manifestStoragePath,
+                    chunk_count: manifestChunkCount,
+                    chunk_sizes: normalizedManifestChunkSizes,
+                    file_count: fileCount,
+                    total_size: totalSize,
+                    collection_item_ids: collectionItemIds,
+                    manifest_storage_path: manifestStoragePath,
+                    manifest_chunk_count: manifestChunkCount,
+                    manifest_chunk_sizes: normalizedManifestChunkSizes
+                })
+
+                return res.json({ success: true, fileId, shortId })
             }
 
             if (!storagePath || typeof storagePath !== 'string') {
@@ -396,15 +821,6 @@ export function createApp(options = {}) {
                 return res.status(400).json({ message: 'fileSize must be a non-negative number' })
             }
 
-            if (!isFutureDateString(expiresAt)) {
-                return res.status(400).json({ message: 'expiresAt must be a valid future date' })
-            }
-
-            const parsedMaxDownloads = parsePositiveIntegerInput(maxDownloads)
-            if (Number.isNaN(parsedMaxDownloads)) {
-                return res.status(400).json({ message: 'maxDownloads must be a whole number greater than 0' })
-            }
-
             if (chunkCount != null && (!Number.isInteger(chunkCount) || chunkCount < 1)) {
                 return res.status(400).json({ message: 'chunkCount must be an integer greater than 0' })
             }
@@ -413,27 +829,17 @@ export function createApp(options = {}) {
                 return res.status(400).json({ message: 'chunkSizes must be an array when provided' })
             }
 
-            const normalizedPassword = normalizeOptionalPassword(password)
-            const passwordHash = normalizedPassword
-                ? await bcryptModule.hash(normalizedPassword, 10)
-                : null
-
-            const normalizedExpiresAt = new Date(expiresAt).toISOString()
             const normalizedChunkCount = chunkCount ?? 1
-            const normalizedStorageBackend = storageBackend || 'r2'
-
             const shortId = await insertFileMetadataWithShortId({
-                file_id: fileId,
+                ...baseRecord,
                 original_name: originalName,
                 file_type: fileType,
                 file_size: fileSize,
                 storage_path: storagePath,
-                storage_backend: normalizedStorageBackend,
                 chunk_count: normalizedChunkCount,
                 chunk_sizes: chunkSizes || null,
-                expires_at: normalizedExpiresAt,
-                max_downloads: parsedMaxDownloads,
-                password_hash: passwordHash
+                file_count: 1,
+                total_size: fileSize
             })
 
             res.json({ success: true, fileId, shortId })
@@ -506,7 +912,7 @@ export function createApp(options = {}) {
             const { identifier } = req.params
             const { data: file, error } = await findFileByIdentifier(
                 identifier,
-                'file_id, short_id, storage_path, storage_backend, expires_at, download_count, max_downloads, password_hash'
+                'file_id, short_id, share_kind, file_count, total_size, storage_path, storage_backend, chunk_count, chunk_sizes, manifest_storage_path, manifest_chunk_count, manifest_chunk_sizes, expires_at, download_count, max_downloads, password_hash'
             )
 
             if (error || !file) {
@@ -548,16 +954,38 @@ export function createApp(options = {}) {
                 max_downloads: reservationResult.max_downloads
             }
 
-            const { presignedUrl } = await r2.getPresignedDownloadUrl(file.storage_path)
-
             if (reservationResult.exhausted) {
                 scheduleExhaustedFileDeletion(updatedFile)
             }
+
+            if (isMultiShare(file)) {
+                const manifestPath = file.manifest_storage_path || buildCollectionManifestObjectKey(file.file_id)
+                const { presignedUrl: manifestPresignedUrl } = await r2.getPresignedDownloadUrl(manifestPath)
+                const sessionToken = createDownloadSessionToken(file)
+
+                return res.json({
+                    success: true,
+                    fileId: file.file_id,
+                    shortId: file.short_id,
+                    shareKind: SHARE_KIND_MULTI,
+                    manifestPresignedUrl,
+                    manifestChunkCount: file.manifest_chunk_count ?? file.chunk_count ?? 1,
+                    manifestChunkSizes: file.manifest_chunk_sizes ?? file.chunk_sizes ?? null,
+                    sessionToken,
+                    downloadCount: reservationResult.download_count,
+                    maxDownloads: reservationResult.max_downloads,
+                    remainingDownloads: getRemainingDownloads(updatedFile),
+                    exhausted: reservationResult.exhausted
+                })
+            }
+
+            const { presignedUrl } = await r2.getPresignedDownloadUrl(file.storage_path)
 
             res.json({
                 success: true,
                 fileId: file.file_id,
                 shortId: file.short_id,
+                shareKind: SHARE_KIND_SINGLE,
                 presignedUrl,
                 downloadCount: reservationResult.download_count,
                 maxDownloads: reservationResult.max_downloads,
@@ -567,6 +995,58 @@ export function createApp(options = {}) {
         } catch (error) {
             console.error('[Authorize Download] Error:', error)
             res.status(500).json({ message: error.message })
+        }
+    })
+
+    app.post('/api/files/:identifier/authorize-item-download', async (req, res) => {
+        try {
+            const { identifier } = req.params
+            const itemId = typeof req.body?.itemId === 'string' ? req.body.itemId.trim() : ''
+            const sessionToken = req.body?.sessionToken
+            const { data: file, error } = await findFileByIdentifier(
+                identifier,
+                'file_id, short_id, share_kind, file_count, collection_item_ids, storage_backend, expires_at'
+            )
+
+            if (error || !file) {
+                return res.status(404).json({ message: 'File not found' })
+            }
+
+            if (!isMultiShare(file)) {
+                return res.status(400).json({ message: 'Item downloads are only available for multi-file shares' })
+            }
+
+            if (new Date(file.expires_at) < new Date()) {
+                return res.status(410).json({ message: 'File has expired' })
+            }
+
+            if (!isValidCollectionItemId(itemId)) {
+                return res.status(400).json({ message: 'Invalid itemId' })
+            }
+            if (!Array.isArray(file.collection_item_ids) || !file.collection_item_ids.includes(itemId)) {
+                return res.status(403).json({ message: 'Item does not belong to this collection' })
+            }
+
+            verifyDownloadSessionToken(sessionToken, file.file_id)
+
+            const objectKey = buildCollectionItemObjectKey(file.file_id, itemId)
+            const { presignedUrl } = await r2.getPresignedDownloadUrl(objectKey)
+
+            res.json({
+                success: true,
+                fileId: file.file_id,
+                shortId: file.short_id,
+                itemId,
+                presignedUrl
+            })
+        } catch (error) {
+            const status = error.message === 'sessionToken is required'
+                ? 400
+                : error.message === 'Download session has expired' || error.message === 'Invalid session token'
+                    ? 401
+                    : 500
+            console.error('[Authorize Item Download] Error:', error)
+            res.status(status).json({ message: error.message })
         }
     })
 
@@ -591,7 +1071,7 @@ export function createApp(options = {}) {
 
             const { data: expiredFiles, error: fetchError } = await supabase
                 .from('files')
-                .select('file_id, storage_path, storage_backend, original_name')
+                .select('file_id, share_kind, file_count, collection_item_ids, storage_path, storage_backend, original_name, manifest_storage_path')
                 .lt('expires_at', new Date().toISOString())
 
             if (fetchError) {
@@ -607,13 +1087,7 @@ export function createApp(options = {}) {
 
             for (const file of expiredFiles) {
                 try {
-                    if (file.storage_backend === 'r2') {
-                        await r2.deleteObject(file.storage_path)
-                    } else {
-                        await supabase.storage
-                            .from('encrypted-files')
-                            .remove([file.storage_path])
-                    }
+                    await deleteShareObjects(file)
 
                     const { error: dbError } = await supabase
                         .from('files')

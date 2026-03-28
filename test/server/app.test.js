@@ -3,6 +3,7 @@ import request from 'supertest'
 import crypto from 'crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { createApp } from '../../server/app.js'
+import { buildCollectionItemObjectKey, buildCollectionManifestObjectKey } from '../../shared/collectionShare.js'
 
 function createSupabaseMock({
     existingShortIds = new Set(),
@@ -144,6 +145,37 @@ describe('server app routes', () => {
         expect(supabase.insertedRows[0].short_id).toBe(response.body.shortId)
     })
 
+    it('rejects incomplete multi-chunk manifest metadata for multi-file shares', async () => {
+        const supabase = createSupabaseMock({})
+        const app = createApp({
+            env: {
+                VITE_SUPABASE_URL: 'https://example.supabase.co',
+                SUPABASE_SERVICE_KEY: 'service-role-key',
+            },
+            supabase,
+        })
+
+        const response = await request(app)
+            .post('/api/files/metadata')
+            .send({
+                fileId: '123e4567-e89b-12d3-a456-426614174000',
+                shareKind: 'multi',
+                fileCount: 2,
+                totalSize: 2048,
+                collectionItemIds: [
+                    '11111111-1111-1111-1111-111111111111',
+                    '22222222-2222-2222-2222-222222222222'
+                ],
+                manifestStoragePath: buildCollectionManifestObjectKey('123e4567-e89b-12d3-a456-426614174000'),
+                manifestChunkCount: 2,
+                manifestChunkSizes: null,
+                expiresAt: '2099-01-01T00:00:00.000Z'
+            })
+
+        expect(response.status).toBe(400)
+        expect(response.body.message).toContain('manifestChunkSizes')
+    })
+
     it('looks up file metadata by short id', async () => {
         const file = {
             file_id: '123e4567-e89b-12d3-a456-426614174000',
@@ -178,6 +210,47 @@ describe('server app routes', () => {
         expect(response.status).toBe(200)
         expect(response.body.file_id).toBe(file.file_id)
         expect(response.body.short_id).toBe(file.short_id)
+    })
+
+    it('returns collection summary metadata for multi-file shares', async () => {
+        const itemIdOne = '11111111-1111-1111-1111-111111111111'
+        const itemIdTwo = '22222222-2222-2222-2222-222222222222'
+        const itemIdThree = '33333333-3333-3333-3333-333333333333'
+        const file = {
+            file_id: '123e4567-e89b-12d3-a456-426614174000',
+            short_id: 'Pack1234',
+            share_kind: 'multi',
+            file_count: 3,
+            total_size: 4096,
+            collection_item_ids: [itemIdOne, itemIdTwo, itemIdThree],
+            manifest_storage_path: buildCollectionManifestObjectKey('123e4567-e89b-12d3-a456-426614174000'),
+            manifest_chunk_count: 1,
+            manifest_chunk_sizes: null,
+            expires_at: '2099-01-01T00:00:00.000Z',
+            created_at: '2026-01-01T00:00:00.000Z',
+            download_count: 0,
+            max_downloads: null,
+            password_hash: null,
+        }
+        const supabase = createSupabaseMock({
+            filesById: { [file.file_id]: file },
+            filesByShortId: { [file.short_id]: file },
+        })
+
+        const app = createApp({
+            env: {
+                VITE_SUPABASE_URL: 'https://example.supabase.co',
+                SUPABASE_SERVICE_KEY: 'service-role-key',
+            },
+            supabase,
+        })
+
+        const response = await request(app).get(`/api/files/${file.short_id}`)
+        expect(response.status).toBe(200)
+        expect(response.body.share_kind).toBe('multi')
+        expect(response.body.file_count).toBe(3)
+        expect(response.body.total_size).toBe(4096)
+        expect(response.body.original_name).toBeUndefined()
     })
 
     it('returns minimal metadata for password-protected files', async () => {
@@ -301,6 +374,189 @@ describe('server app routes', () => {
         expect(getPresignedDownloadUrl).toHaveBeenCalledWith(file.storage_path)
     })
 
+    it('authorizes multi-file downloads by returning a manifest URL and session token', async () => {
+        const itemIdOne = '11111111-1111-1111-1111-111111111111'
+        const itemIdTwo = '22222222-2222-2222-2222-222222222222'
+        const file = {
+            file_id: '123e4567-e89b-12d3-a456-426614174000',
+            short_id: 'Pack1234',
+            share_kind: 'multi',
+            file_count: 2,
+            total_size: 4096,
+            collection_item_ids: [itemIdOne, itemIdTwo],
+            manifest_storage_path: buildCollectionManifestObjectKey('123e4567-e89b-12d3-a456-426614174000'),
+            manifest_chunk_count: 1,
+            manifest_chunk_sizes: null,
+            storage_backend: 'r2',
+            expires_at: '2099-01-01T00:00:00.000Z',
+            download_count: 0,
+            max_downloads: 2,
+            password_hash: null,
+        }
+        const supabase = createSupabaseMock({
+            filesById: { [file.file_id]: file },
+            filesByShortId: { [file.short_id]: file },
+            authorizeDownloadResult: [{ download_count: 1, max_downloads: 2, exhausted: false }],
+        })
+        const getPresignedDownloadUrl = vi.fn(async () => ({ presignedUrl: 'https://download.example/manifest' }))
+
+        const app = createApp({
+            env: {
+                VITE_SUPABASE_URL: 'https://example.supabase.co',
+                SUPABASE_SERVICE_KEY: 'service-role-key',
+                DOWNLOAD_SESSION_SECRET: 'session-secret',
+            },
+            supabase,
+            getPresignedDownloadUrl,
+        })
+
+        const response = await request(app).post(`/api/files/${file.short_id}/authorize-download`)
+        expect(response.status).toBe(200)
+        expect(response.body.shareKind).toBe('multi')
+        expect(response.body.manifestPresignedUrl).toBe('https://download.example/manifest')
+        expect(response.body.sessionToken).toEqual(expect.any(String))
+        expect(getPresignedDownloadUrl).toHaveBeenCalledWith(file.manifest_storage_path)
+    })
+
+    it('authorizes individual collection items when the session token is valid', async () => {
+        const itemIdOne = '11111111-1111-1111-1111-111111111111'
+        const itemIdTwo = '22222222-2222-2222-2222-222222222222'
+        const file = {
+            file_id: '123e4567-e89b-12d3-a456-426614174000',
+            short_id: 'Pack1234',
+            share_kind: 'multi',
+            file_count: 2,
+            total_size: 4096,
+            collection_item_ids: [itemIdOne, itemIdTwo],
+            manifest_storage_path: buildCollectionManifestObjectKey('123e4567-e89b-12d3-a456-426614174000'),
+            storage_backend: 'r2',
+            expires_at: '2099-01-01T00:00:00.000Z',
+            download_count: 0,
+            max_downloads: null,
+            password_hash: null,
+        }
+        const supabase = createSupabaseMock({
+            filesById: { [file.file_id]: file },
+            filesByShortId: { [file.short_id]: file },
+            authorizeDownloadResult: [{ download_count: 1, max_downloads: null, exhausted: false }],
+        })
+        const getPresignedDownloadUrl = vi.fn(async () => ({ presignedUrl: 'https://download.example/item' }))
+
+        const app = createApp({
+            env: {
+                VITE_SUPABASE_URL: 'https://example.supabase.co',
+                SUPABASE_SERVICE_KEY: 'service-role-key',
+                DOWNLOAD_SESSION_SECRET: 'session-secret',
+            },
+            supabase,
+            getPresignedDownloadUrl,
+        })
+
+        const authorizeShare = await request(app).post(`/api/files/${file.short_id}/authorize-download`)
+        expect(authorizeShare.status).toBe(200)
+
+        const authorizeItem = await request(app)
+            .post(`/api/files/${file.short_id}/authorize-item-download`)
+            .send({
+                sessionToken: authorizeShare.body.sessionToken,
+                itemId: itemIdOne
+            })
+
+        expect(authorizeItem.status).toBe(200)
+        expect(authorizeItem.body.presignedUrl).toBe('https://download.example/item')
+        expect(getPresignedDownloadUrl).toHaveBeenCalledWith(
+            buildCollectionItemObjectKey(file.file_id, itemIdOne)
+        )
+    })
+
+    it('rejects tampered collection session tokens', async () => {
+        const itemIdOne = '11111111-1111-1111-1111-111111111111'
+        const file = {
+            file_id: '123e4567-e89b-12d3-a456-426614174000',
+            short_id: 'Pack1234',
+            share_kind: 'multi',
+            file_count: 1,
+            collection_item_ids: [itemIdOne],
+            manifest_storage_path: buildCollectionManifestObjectKey('123e4567-e89b-12d3-a456-426614174000'),
+            storage_backend: 'r2',
+            expires_at: '2099-01-01T00:00:00.000Z',
+            download_count: 0,
+            max_downloads: null,
+            password_hash: null,
+        }
+        const supabase = createSupabaseMock({
+            filesById: { [file.file_id]: file },
+            filesByShortId: { [file.short_id]: file },
+            authorizeDownloadResult: [{ download_count: 1, max_downloads: null, exhausted: false }],
+        })
+
+        const app = createApp({
+            env: {
+                VITE_SUPABASE_URL: 'https://example.supabase.co',
+                SUPABASE_SERVICE_KEY: 'service-role-key',
+                DOWNLOAD_SESSION_SECRET: 'session-secret',
+            },
+            supabase,
+            getPresignedDownloadUrl: vi.fn(async () => ({ presignedUrl: 'https://download.example/item' })),
+        })
+
+        const authorizeShare = await request(app).post(`/api/files/${file.short_id}/authorize-download`)
+        const [payloadToken] = authorizeShare.body.sessionToken.split('.')
+        const tamperedToken = `${payloadToken}.tampered-signature`
+
+        const response = await request(app)
+            .post(`/api/files/${file.short_id}/authorize-item-download`)
+            .send({
+                sessionToken: tamperedToken,
+                itemId: itemIdOne
+            })
+
+        expect(response.status).toBe(401)
+        expect(response.body.message).toBe('Invalid session token')
+    })
+
+    it('rejects item download requests for item ids outside the collection membership list', async () => {
+        const itemIdOne = '11111111-1111-1111-1111-111111111111'
+        const file = {
+            file_id: '123e4567-e89b-12d3-a456-426614174000',
+            short_id: 'Pack1234',
+            share_kind: 'multi',
+            file_count: 1,
+            collection_item_ids: [itemIdOne],
+            storage_backend: 'r2',
+            expires_at: '2099-01-01T00:00:00.000Z',
+            download_count: 0,
+            max_downloads: null,
+            password_hash: null,
+        }
+        const supabase = createSupabaseMock({
+            filesById: { [file.file_id]: file },
+            filesByShortId: { [file.short_id]: file },
+            authorizeDownloadResult: [{ download_count: 1, max_downloads: null, exhausted: false }],
+        })
+
+        const app = createApp({
+            env: {
+                VITE_SUPABASE_URL: 'https://example.supabase.co',
+                SUPABASE_SERVICE_KEY: 'service-role-key',
+                DOWNLOAD_SESSION_SECRET: 'session-secret',
+            },
+            supabase,
+            getPresignedDownloadUrl: vi.fn(async () => ({ presignedUrl: 'https://download.example/item' })),
+        })
+
+        const authorizeShare = await request(app).post(`/api/files/${file.short_id}/authorize-download`)
+        const response = await request(app)
+            .post(`/api/files/${file.short_id}/authorize-item-download`)
+            .send({
+                sessionToken: authorizeShare.body.sessionToken,
+                itemId: '99999999-9999-9999-9999-999999999999'
+            })
+
+        expect(response.status).toBe(403)
+        expect(response.body.message).toBe('Item does not belong to this collection')
+    })
+
     it('blocks downloads once max_downloads is exhausted', async () => {
         const file = {
             file_id: '123e4567-e89b-12d3-a456-426614174000',
@@ -394,5 +650,72 @@ describe('server app routes', () => {
 
         const sitemap = await request(app).get('/sitemap.xml')
         expect(sitemap.status).toBe(404)
+    })
+
+    it('requires an internal secret for bulk R2 deletions', async () => {
+        const deleteObject = vi.fn(async () => undefined)
+        const app = createApp({
+            env: {
+                VITE_SUPABASE_URL: 'https://example.supabase.co',
+                SUPABASE_SERVICE_KEY: 'service-role-key',
+                CLEANUP_SECRET: 'cleanup-secret',
+            },
+            supabase: createSupabaseMock({}),
+            deleteObject,
+        })
+
+        const denied = await request(app)
+            .post('/api/r2/delete-objects')
+            .send({ objectKeys: ['shares/demo/manifest.enc'] })
+
+        expect(denied.status).toBe(401)
+        expect(deleteObject).not.toHaveBeenCalled()
+
+        const allowed = await request(app)
+            .post('/api/r2/delete-objects')
+            .set('x-internal-secret', 'cleanup-secret')
+            .send({ objectKeys: ['shares/demo/manifest.enc'] })
+
+        expect(allowed.status).toBe(200)
+        expect(allowed.body.deleted).toEqual(['shares/demo/manifest.enc'])
+        expect(deleteObject).toHaveBeenCalledWith('shares/demo/manifest.enc')
+    })
+
+    it('allows rollback-token based object deletion without the internal secret header', async () => {
+        const deleteObject = vi.fn(async () => undefined)
+        const getPresignedUploadUrl = vi.fn(async () => ({
+            presignedUrl: 'https://upload.example/object',
+            objectKey: 'shares/123e4567-e89b-12d3-a456-426614174000/manifest.enc'
+        }))
+        const app = createApp({
+            env: {
+                VITE_SUPABASE_URL: 'https://example.supabase.co',
+                SUPABASE_SERVICE_KEY: 'service-role-key',
+                CLEANUP_SECRET: 'cleanup-secret',
+            },
+            supabase: createSupabaseMock({}),
+            getPresignedUploadUrl,
+            deleteObject,
+        })
+
+        const presign = await request(app)
+            .post('/api/r2/simple-upload')
+            .send({ objectKey: 'shares/123e4567-e89b-12d3-a456-426614174000/manifest.enc' })
+
+        expect(presign.status).toBe(200)
+        expect(presign.body.rollbackToken).toEqual(expect.any(String))
+
+        const deleteResponse = await request(app)
+            .post('/api/r2/delete-objects')
+            .send({
+                objects: [{
+                    objectKey: presign.body.objectKey,
+                    rollbackToken: presign.body.rollbackToken
+                }]
+            })
+
+        expect(deleteResponse.status).toBe(200)
+        expect(deleteResponse.body.deleted).toEqual([presign.body.objectKey])
+        expect(deleteObject).toHaveBeenCalledWith(presign.body.objectKey)
     })
 })

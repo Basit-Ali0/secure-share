@@ -31,21 +31,25 @@ export async function uploadToR2(encryptedChunks, authTags, fileId, onProgress =
 /**
  * Simple single-file upload for small files
  */
-export async function simpleUploadToR2(encryptedChunk, authTag, fileId, onProgress) {
+export async function simpleUploadToR2(encryptedChunk, authTag, fileIdOrObjectKey, onProgress) {
     onProgress(0, 'initiating')
 
     // Get presigned URL
     const response = await fetch('/api/r2/simple-upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileId })
+        body: JSON.stringify(
+            typeof fileIdOrObjectKey === 'string' && fileIdOrObjectKey.startsWith('shares/')
+                ? { objectKey: fileIdOrObjectKey }
+                : { fileId: fileIdOrObjectKey }
+        )
     })
 
     if (!response.ok) {
         throw new Error('Failed to get upload URL')
     }
 
-    const { presignedUrl, objectKey } = await response.json()
+    const { presignedUrl, objectKey, rollbackToken } = await response.json()
 
     onProgress(10, 'uploading')
 
@@ -67,7 +71,7 @@ export async function simpleUploadToR2(encryptedChunk, authTag, fileId, onProgre
 
     onProgress(100, 'complete')
 
-    return { objectKey, totalChunks: 1 }
+    return { objectKey, rollbackToken, totalChunks: 1 }
 }
 
 /**
@@ -79,7 +83,7 @@ async function multipartUploadToR2(encryptedChunks, authTags, fileId, onProgress
     onProgress(0, 'initiating')
 
     // 1. Initiate multipart upload
-    const { uploadId, objectKey } = await initiateMultipartUpload(fileId)
+    const { uploadId, objectKey, rollbackToken } = await initiateMultipartUpload(fileId)
 
     try {
         onProgress(5, 'uploading')
@@ -127,7 +131,7 @@ async function multipartUploadToR2(encryptedChunks, authTags, fileId, onProgress
 
         onProgress(100, 'complete')
 
-        return { objectKey, totalChunks, chunkSizes }
+        return { objectKey, rollbackToken, totalChunks, chunkSizes }
     } catch (error) {
         // Abort multipart upload on failure to prevent stale uploads in R2
         try {
@@ -166,11 +170,15 @@ async function parallelProcess(items, processFn, concurrency) {
 /**
  * Initiate multipart upload (calls server endpoint)
  */
-export async function initiateMultipartUpload(fileId) {
+export async function initiateMultipartUpload(fileIdOrObjectKey) {
     const response = await fetch('/api/r2/initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileId })
+        body: JSON.stringify(
+            typeof fileIdOrObjectKey === 'string' && fileIdOrObjectKey.startsWith('shares/')
+                ? { objectKey: fileIdOrObjectKey }
+                : { fileId: fileIdOrObjectKey }
+        )
     })
 
     if (!response.ok) {

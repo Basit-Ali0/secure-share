@@ -11,6 +11,10 @@ import {
     uploadChunkToR2,
     completeMultipartUpload
 } from './r2Upload.js'
+import {
+    buildCollectionItemObjectKey,
+    buildCollectionManifestObjectKey
+} from '../../shared/collectionShare.js'
 
 /**
  * Generate encryption key and IV
@@ -25,6 +29,95 @@ export async function generateEncryptionKeys() {
         iv,
         keyHex: arrayBufferToHex(key.buffer),
         ivHex: arrayBufferToHex(iv.buffer)
+    }
+}
+
+export async function generateTransferKey() {
+    const key = crypto.getRandomValues(new Uint8Array(32))
+    return {
+        key,
+        keyHex: arrayBufferToHex(key.buffer)
+    }
+}
+
+async function deriveKeyMaterial(masterKeyBytes, shareId, infoLabel) {
+    const encoder = new TextEncoder()
+    const importedKey = await crypto.subtle.importKey(
+        'raw',
+        masterKeyBytes,
+        'HKDF',
+        false,
+        ['deriveBits']
+    )
+    const derivedBits = await crypto.subtle.deriveBits(
+        {
+            name: 'HKDF',
+            hash: 'SHA-256',
+            salt: encoder.encode(`maskedfile:${shareId}`),
+            info: encoder.encode(infoLabel),
+        },
+        importedKey,
+        (32 + 12) * 8
+    )
+    const derivedBytes = new Uint8Array(derivedBits)
+    const key = derivedBytes.slice(0, 32)
+    const iv = derivedBytes.slice(32)
+
+    return {
+        key,
+        iv,
+        keyHex: arrayBufferToHex(key.buffer),
+        ivHex: arrayBufferToHex(iv.buffer)
+    }
+}
+
+export async function deriveCollectionManifestMaterial(transferKeyHex, shareId) {
+    const transferKey = new Uint8Array(hexToArrayBuffer(transferKeyHex))
+    return deriveKeyMaterial(transferKey, shareId, 'maskedfile:manifest')
+}
+
+export async function deriveCollectionItemMaterial(transferKeyHex, shareId, itemId) {
+    const transferKey = new Uint8Array(hexToArrayBuffer(transferKeyHex))
+    return deriveKeyMaterial(transferKey, shareId, `maskedfile:item:${itemId}`)
+}
+
+export async function rollbackUploadedObjects(objects) {
+    if (!Array.isArray(objects) || objects.length === 0) {
+        return
+    }
+
+    try {
+        const rollbackTargets = objects.filter((value) =>
+            value &&
+            typeof value.objectKey === 'string' &&
+            value.objectKey.length > 0 &&
+            typeof value.rollbackToken === 'string' &&
+            value.rollbackToken.length > 0
+        )
+
+        if (rollbackTargets.length === 0) {
+            return
+        }
+
+        const response = await fetch('/api/r2/delete-objects', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'maskedfile-client'
+            },
+            body: JSON.stringify({ objects: rollbackTargets })
+        })
+
+        if (!response.ok) {
+            return
+        }
+
+        const result = await response.json().catch(() => null)
+        if (result && Array.isArray(result.failed) && result.failed.length > 0) {
+            console.warn('Rollback failed for some uploaded objects:', result.failed)
+        }
+    } catch {
+        // Best-effort rollback only; scheduled cleanup can handle any leftovers.
     }
 }
 
@@ -91,8 +184,7 @@ export async function encryptFileStreaming(file, onProgress = () => { }) {
  * @param {Function} onProgress - Progress callback (percent, statusText)
  * @returns {Object} - { objectKey, keyHex, ivHex, totalChunks, chunkSizes }
  */
-export async function encryptAndUploadStreaming(file, fileId, onProgress = () => { }) {
-    const { key, iv, keyHex, ivHex } = await generateEncryptionKeys()
+async function encryptAndUploadWithMaterial(file, uploadTarget, key, iv, onProgress = () => { }) {
     const chunkSize = getOptimalChunkSize(file.size)
     const totalChunks = getChunkCount(file, chunkSize)
 
@@ -111,21 +203,21 @@ export async function encryptAndUploadStreaming(file, fileId, onProgress = () =>
 
         onProgress(30, 'Uploading...')
 
-        const { objectKey } = await simpleUploadToR2(
+        const { objectKey, rollbackToken } = await simpleUploadToR2(
             result.encryptedBuffer,
             result.authTag,
-            fileId,
+            uploadTarget,
             (p) => onProgress(30 + p * 0.65, 'Uploading...')
         )
 
         onProgress(100, 'Complete!')
-        return { objectKey, keyHex, ivHex, totalChunks: 1, chunkSizes: null }
+        return { objectKey, rollbackToken, totalChunks: 1, chunkSizes: null }
     }
 
     // --- Pipelined multipart: encrypt → upload → free per chunk ---
     onProgress(2, 'Starting upload...')
 
-    const { uploadId, objectKey } = await initiateMultipartUpload(fileId)
+    const { uploadId, objectKey, rollbackToken } = await initiateMultipartUpload(uploadTarget)
 
     const parts = []
     const chunkSizes = []
@@ -163,7 +255,116 @@ export async function encryptAndUploadStreaming(file, fileId, onProgress = () =>
     await completeMultipartUpload(objectKey, uploadId, parts)
 
     onProgress(100, 'Complete!')
-    return { objectKey, keyHex, ivHex, totalChunks, chunkSizes }
+    return { objectKey, rollbackToken, totalChunks, chunkSizes }
+}
+
+export async function encryptAndUploadStreaming(file, fileId, onProgress = () => { }) {
+    const { key, iv, keyHex, ivHex } = await generateEncryptionKeys()
+    const uploadResult = await encryptAndUploadWithMaterial(file, fileId, key, iv, onProgress)
+
+    return {
+        ...uploadResult,
+        keyHex,
+        ivHex
+    }
+}
+
+export async function encryptAndUploadCollection(fileEntries, shareId, onProgress = () => { }) {
+    const normalizedEntries = fileEntries.map((entry, index) => ({
+        file: entry.file,
+        relativePath: entry.relativePath || entry.file.webkitRelativePath || entry.file.name,
+        itemId: crypto.randomUUID(),
+        order: index
+    }))
+    const totalFiles = normalizedEntries.length
+    const totalSize = normalizedEntries.reduce((sum, entry) => sum + entry.file.size, 0)
+    const { keyHex: transferKeyHex } = await generateTransferKey()
+    const manifestItems = []
+    const uploadedObjects = []
+
+    try {
+        for (let index = 0; index < normalizedEntries.length; index++) {
+            const entry = normalizedEntries[index]
+            const material = await deriveCollectionItemMaterial(transferKeyHex, shareId, entry.itemId)
+            const randomIv = crypto.getRandomValues(new Uint8Array(12))
+            const objectKey = buildCollectionItemObjectKey(shareId, entry.itemId)
+            const uploadResult = await encryptAndUploadWithMaterial(
+                entry.file,
+                objectKey,
+                material.key,
+                randomIv,
+                (progress, statusText) => onProgress({
+                    progress,
+                    statusText,
+                    itemIndex: index,
+                    totalFiles,
+                    currentFileName: entry.file.name,
+                    currentItemId: entry.itemId,
+                    stage: 'item'
+                })
+            )
+            uploadedObjects.push({
+                objectKey: uploadResult.objectKey,
+                rollbackToken: uploadResult.rollbackToken
+            })
+
+            manifestItems.push({
+                itemId: entry.itemId,
+                order: entry.order,
+                name: entry.file.name,
+                relativePath: entry.relativePath,
+                size: entry.file.size,
+                type: entry.file.type,
+                ivHex: arrayBufferToHex(randomIv.buffer),
+                chunkCount: uploadResult.totalChunks,
+                chunkSizes: uploadResult.chunkSizes || null
+            })
+        }
+
+        const manifest = {
+            version: 1,
+            shareId,
+            fileCount: totalFiles,
+            totalSize,
+            files: manifestItems
+        }
+        const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' })
+        const manifestMaterial = await deriveCollectionManifestMaterial(transferKeyHex, shareId)
+        const manifestUpload = await encryptAndUploadWithMaterial(
+            manifestBlob,
+            buildCollectionManifestObjectKey(shareId),
+            manifestMaterial.key,
+            manifestMaterial.iv,
+            (progress, statusText) => onProgress({
+                progress,
+                statusText,
+                itemIndex: totalFiles,
+                totalFiles: totalFiles + 1,
+                currentFileName: 'Share manifest',
+                currentItemId: 'manifest',
+                stage: 'manifest'
+            })
+        )
+        uploadedObjects.push({
+            objectKey: manifestUpload.objectKey,
+            rollbackToken: manifestUpload.rollbackToken
+        })
+
+        return {
+            shareId,
+            shareKind: 'multi',
+            transferKeyHex,
+            fileCount: totalFiles,
+            totalSize,
+            manifest,
+            manifestUpload,
+            uploadedObjects,
+            items: manifestItems
+        }
+    } catch (error) {
+        await rollbackUploadedObjects(uploadedObjects)
+        throw error
+    }
 }
 
 /**
@@ -309,6 +510,86 @@ export async function downloadAndDecryptStreaming(
         triggerBlobDownload(blob, fileName)
         onProgress(100, 'Complete!')
     }
+}
+
+async function downloadAndDecryptToBuffer(downloadSource, totalChunks, chunkSizes, keyBytes, ivBytes, onProgress = () => { }) {
+    const pool = getWorkerPool()
+    await pool.init()
+
+    if (typeof downloadSource !== 'string' || !/^https?:\/\//i.test(downloadSource)) {
+        throw new Error('Download source must be a presigned URL')
+    }
+
+    if (totalChunks > 1 && !chunkSizes) {
+        throw new Error('Missing chunkSizes metadata for multi-chunk file')
+    }
+
+    if (totalChunks === 1) {
+        onProgress(5, 'Downloading...')
+
+        const downloadResponse = await fetch(downloadSource)
+        if (!downloadResponse.ok) {
+            throw new Error('Failed to download file')
+        }
+
+        const data = await downloadResponse.arrayBuffer()
+        const encryptedData = data.slice(0, -16)
+        const authTag = data.slice(-16)
+
+        onProgress(60, 'Decrypting...')
+        const result = await pool.decryptChunk(encryptedData, authTag, keyBytes, ivBytes, 0)
+        onProgress(100, 'Complete!')
+        return new Uint8Array(result.decryptedBuffer)
+    }
+
+    let byteOffset = 0
+    const ranges = chunkSizes.map(size => {
+        const start = byteOffset
+        const end = byteOffset + size - 1
+        byteOffset += size
+        return { start, end }
+    })
+    const decryptedParts = []
+
+    for (let index = 0; index < totalChunks; index++) {
+        const range = ranges[index]
+        const chunkResponse = await fetch(downloadSource, {
+            headers: { Range: `bytes=${range.start}-${range.end}` }
+        })
+        if (!chunkResponse.ok) {
+            throw new Error(`Failed to download chunk ${index + 1}`)
+        }
+
+        const chunkData = await chunkResponse.arrayBuffer()
+        const encryptedData = chunkData.slice(0, -16)
+        const authTag = chunkData.slice(-16)
+        const result = await pool.decryptChunk(encryptedData, authTag, keyBytes, ivBytes, index)
+        decryptedParts.push(new Uint8Array(result.decryptedBuffer))
+        onProgress(5 + ((index + 1) / totalChunks) * 95, `Downloading & decrypting (${index + 1}/${totalChunks})...`)
+    }
+
+    const totalLength = decryptedParts.reduce((sum, part) => sum + part.byteLength, 0)
+    const combined = new Uint8Array(totalLength)
+    let offset = 0
+    for (const part of decryptedParts) {
+        combined.set(part, offset)
+        offset += part.byteLength
+    }
+
+    return combined
+}
+
+export async function downloadAndDecryptManifest(downloadSource, totalChunks, chunkSizes, transferKeyHex, shareId) {
+    const material = await deriveCollectionManifestMaterial(transferKeyHex, shareId)
+    const buffer = await downloadAndDecryptToBuffer(
+        downloadSource,
+        totalChunks,
+        chunkSizes,
+        material.key,
+        material.iv
+    )
+
+    return JSON.parse(new TextDecoder().decode(buffer))
 }
 
 /**

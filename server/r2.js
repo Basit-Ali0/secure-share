@@ -9,17 +9,27 @@ import {
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import dotenv from 'dotenv'
-import { COLLECTION_ITEM_ID_REGEX } from '../shared/collectionShare.js'
+import { isValidCollectionItemId } from '../shared/collectionShare.js'
 
 dotenv.config()
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const SINGLE_FILE_OBJECT_KEY_REGEX = /^files\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.enc$/i
 const COLLECTION_MANIFEST_OBJECT_KEY_REGEX = /^shares\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/manifest\.enc$/i
-const COLLECTION_ITEM_OBJECT_KEY_REGEX = new RegExp(
-    `^shares\\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\/items\\/${COLLECTION_ITEM_ID_REGEX.source.replace(/^\\^|\\$$/g, '')}\\.enc$`,
-    'i'
-)
+
+function isValidCollectionItemObjectKey(objectKey) {
+    if (typeof objectKey !== 'string') {
+        return false
+    }
+
+    const match = objectKey.match(/^shares\/([0-9a-f-]+)\/items\/([0-9a-f-]+)\.enc$/i)
+    if (!match) {
+        return false
+    }
+
+    const [, shareId, itemId] = match
+    return UUID_REGEX.test(shareId) && isValidCollectionItemId(itemId)
+}
 
 export function validateR2Config(env = process.env) {
     const requiredR2Vars = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']
@@ -55,7 +65,7 @@ function validateObjectKey(objectKey) {
     if (
         !SINGLE_FILE_OBJECT_KEY_REGEX.test(objectKey) &&
         !COLLECTION_MANIFEST_OBJECT_KEY_REGEX.test(objectKey) &&
-        !COLLECTION_ITEM_OBJECT_KEY_REGEX.test(objectKey)
+        !isValidCollectionItemObjectKey(objectKey)
     ) {
         throw new Error('Invalid objectKey: unsupported storage path')
     }

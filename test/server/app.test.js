@@ -438,6 +438,52 @@ describe('server app routes', () => {
         )
     })
 
+    it('rejects tampered collection session tokens', async () => {
+        const itemIdOne = '11111111-1111-1111-1111-111111111111'
+        const file = {
+            file_id: '123e4567-e89b-12d3-a456-426614174000',
+            short_id: 'Pack1234',
+            share_kind: 'multi',
+            file_count: 1,
+            collection_item_ids: [itemIdOne],
+            manifest_storage_path: buildCollectionManifestObjectKey('123e4567-e89b-12d3-a456-426614174000'),
+            storage_backend: 'r2',
+            expires_at: '2099-01-01T00:00:00.000Z',
+            download_count: 0,
+            max_downloads: null,
+            password_hash: null,
+        }
+        const supabase = createSupabaseMock({
+            filesById: { [file.file_id]: file },
+            filesByShortId: { [file.short_id]: file },
+            authorizeDownloadResult: [{ download_count: 1, max_downloads: null, exhausted: false }],
+        })
+
+        const app = createApp({
+            env: {
+                VITE_SUPABASE_URL: 'https://example.supabase.co',
+                SUPABASE_SERVICE_KEY: 'service-role-key',
+                DOWNLOAD_SESSION_SECRET: 'session-secret',
+            },
+            supabase,
+            getPresignedDownloadUrl: vi.fn(async () => ({ presignedUrl: 'https://download.example/item' })),
+        })
+
+        const authorizeShare = await request(app).post(`/api/files/${file.short_id}/authorize-download`)
+        const [payloadToken] = authorizeShare.body.sessionToken.split('.')
+        const tamperedToken = `${payloadToken}.tampered-signature`
+
+        const response = await request(app)
+            .post(`/api/files/${file.short_id}/authorize-item-download`)
+            .send({
+                sessionToken: tamperedToken,
+                itemId: itemIdOne
+            })
+
+        expect(response.status).toBe(401)
+        expect(response.body.message).toBe('Invalid session token')
+    })
+
     it('rejects item download requests for item ids outside the collection membership list', async () => {
         const itemIdOne = '11111111-1111-1111-1111-111111111111'
         const file = {
@@ -573,5 +619,34 @@ describe('server app routes', () => {
 
         const sitemap = await request(app).get('/sitemap.xml')
         expect(sitemap.status).toBe(404)
+    })
+
+    it('requires an internal secret for bulk R2 deletions', async () => {
+        const deleteObject = vi.fn(async () => undefined)
+        const app = createApp({
+            env: {
+                VITE_SUPABASE_URL: 'https://example.supabase.co',
+                SUPABASE_SERVICE_KEY: 'service-role-key',
+                CLEANUP_SECRET: 'cleanup-secret',
+            },
+            supabase: createSupabaseMock({}),
+            deleteObject,
+        })
+
+        const denied = await request(app)
+            .post('/api/r2/delete-objects')
+            .send({ objectKeys: ['shares/demo/manifest.enc'] })
+
+        expect(denied.status).toBe(401)
+        expect(deleteObject).not.toHaveBeenCalled()
+
+        const allowed = await request(app)
+            .post('/api/r2/delete-objects')
+            .set('x-internal-secret', 'cleanup-secret')
+            .send({ objectKeys: ['shares/demo/manifest.enc'] })
+
+        expect(allowed.status).toBe(200)
+        expect(allowed.body.deleted).toEqual(['shares/demo/manifest.enc'])
+        expect(deleteObject).toHaveBeenCalledWith('shares/demo/manifest.enc')
     })
 })

@@ -81,7 +81,7 @@ export async function deriveCollectionItemMaterial(transferKeyHex, shareId, item
     return deriveKeyMaterial(transferKey, shareId, `maskedfile:item:${itemId}`)
 }
 
-async function rollbackUploadedObjects(objectKeys) {
+export async function rollbackUploadedObjects(objectKeys) {
     if (!Array.isArray(objectKeys) || objectKeys.length === 0) {
         return
     }

@@ -188,8 +188,8 @@ export function createApp(options = {}) {
             cryptoModule.createHmac('sha256', secret).update(payloadToken).digest()
         )
 
-        const signatureBuffer = Buffer.from(signatureToken, 'utf8')
-        const expectedBuffer = Buffer.from(expectedSignature, 'utf8')
+        const signatureBuffer = Buffer.from(signatureToken, 'base64url')
+        const expectedBuffer = Buffer.from(expectedSignature, 'base64url')
         if (
             signatureBuffer.length !== expectedBuffer.length ||
             !cryptoModule.timingSafeEqual(signatureBuffer, expectedBuffer)
@@ -387,13 +387,39 @@ export function createApp(options = {}) {
 
         if (isMultiShare(file)) {
             await r2.deleteObject(file.manifest_storage_path || buildCollectionManifestObjectKey(file.file_id))
-            for (const itemId of file.collection_item_ids || []) {
-                await r2.deleteObject(buildCollectionItemObjectKey(file.file_id, itemId))
-            }
+            await Promise.all(
+                (file.collection_item_ids || []).map((itemId) =>
+                    r2.deleteObject(buildCollectionItemObjectKey(file.file_id, itemId))
+                )
+            )
             return
         }
 
         await r2.deleteObject(file.storage_path)
+    }
+
+    function assertInternalSecret(req, res, contextLabel) {
+        const configuredSecret = env.INTERNAL_CLEANUP_SECRET || env.CLEANUP_SECRET
+        if (!configuredSecret) {
+            console.error(`[${contextLabel}] Internal secret is not configured`)
+            res.status(500).json({ message: 'Internal secret is not configured' })
+            return false
+        }
+
+        const providedSecret = req.headers['x-internal-secret'] || req.headers['x-cleanup-secret']
+        if (typeof providedSecret !== 'string' || providedSecret.length === 0) {
+            console.warn(`[${contextLabel}] Rejected request with missing internal secret`)
+            res.status(401).json({ message: 'Missing internal secret' })
+            return false
+        }
+
+        if (providedSecret !== configuredSecret) {
+            console.warn(`[${contextLabel}] Rejected request with invalid internal secret`)
+            res.status(403).json({ message: 'Invalid internal secret' })
+            return false
+        }
+
+        return true
     }
 
     function scheduleExhaustedFileDeletion(file) {
@@ -533,6 +559,10 @@ export function createApp(options = {}) {
 
     app.post('/api/r2/delete-objects', async (req, res) => {
         try {
+            if (!assertInternalSecret(req, res, 'R2 Delete Objects')) {
+                return
+            }
+
             const objectKeys = Array.isArray(req.body?.objectKeys)
                 ? req.body.objectKeys.filter((value) => typeof value === 'string' && value.length > 0)
                 : []
@@ -898,7 +928,9 @@ export function createApp(options = {}) {
                 presignedUrl
             })
         } catch (error) {
-            const status = error.message === 'Download session has expired' ? 401 : 400
+            const status = error.message === 'Download session has expired' || error.message === 'Invalid session token'
+                ? 401
+                : 400
             console.error('[Authorize Item Download] Error:', error)
             res.status(status).json({ message: error.message })
         }

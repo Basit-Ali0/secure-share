@@ -105,6 +105,7 @@ export default function SharePage() {
     const [isUnlocked, setIsUnlocked] = useState(false)
     const [collectionManifest, setCollectionManifest] = useState(null)
     const [collectionSessionToken, setCollectionSessionToken] = useState('')
+    const [transferKey, setTransferKey] = useState('')
     const [collectionLoading, setCollectionLoading] = useState(false)
     const [collectionDownloadAll, setCollectionDownloadAll] = useState(false)
     const [activeCollectionItemId, setActiveCollectionItemId] = useState('')
@@ -169,6 +170,7 @@ export default function SharePage() {
             setIsUnlocked(!data.is_password_protected)
             setCollectionManifest(null)
             setCollectionSessionToken('')
+            setTransferKey('')
         } catch (err) {
             setError(err.message)
         } finally {
@@ -205,6 +207,7 @@ export default function SharePage() {
             setIsUnlocked(true)
             setCollectionManifest(null)
             setCollectionSessionToken('')
+            setTransferKey('')
         } catch (err) {
             setUnlockError(err.message)
             trackEvent('unlock_failed', {
@@ -224,6 +227,8 @@ export default function SharePage() {
         if (!transferKeyHex) {
             throw new Error('Transfer key missing from URL. Invalid collection link.')
         }
+
+        setTransferKey(transferKeyHex)
 
         const authorizeResponse = await fetch(`/api/files/${identifier}/authorize-download`, {
             method: 'POST',
@@ -276,9 +281,7 @@ export default function SharePage() {
     }
 
     async function handleCollectionItemDownload(item, sessionToken = collectionSessionToken) {
-        const hash = window.location.hash.substring(1)
-        const params = new URLSearchParams(hash)
-        const transferKeyHex = params.get('key')
+        const transferKeyHex = transferKey || new URLSearchParams(window.location.hash.substring(1)).get('key')
 
         if (!transferKeyHex) {
             throw new Error('Transfer key missing from URL. Invalid collection link.')

@@ -6,7 +6,12 @@ import UploadProgress from '../components/FileUpload/UploadProgress'
 import ExpirySelector, { EXPIRY_OPTIONS } from '../components/FileUpload/ExpirySelector'
 import FilePreviewModal from '../components/FileUpload/FilePreviewModal'
 import QRCode from '../components/SharePage/QRCode'
-import { encryptAndUploadCollection, encryptAndUploadStreaming, terminateWorkerPool } from '../utils/streamingEncryption'
+import {
+    encryptAndUploadCollection,
+    encryptAndUploadStreaming,
+    rollbackUploadedObjects,
+    terminateWorkerPool
+} from '../utils/streamingEncryption'
 import { formatFileSize } from '../utils/fileUtils'
 import { buildCanonicalUrl, DEFAULT_DESCRIPTION, DEFAULT_TITLE, OG_IMAGE_URL, SITE_NAME } from '../lib/siteConfig'
 import { trackEvent } from '../lib/analytics'
@@ -76,22 +81,6 @@ function flattenSelection(entries) {
 
 function formatCollectionCount(count) {
     return `${count} file${count === 1 ? '' : 's'}`
-}
-
-async function rollbackUploadedObjects(objectKeys) {
-    if (!Array.isArray(objectKeys) || objectKeys.length === 0) {
-        return
-    }
-
-    try {
-        await fetch('/api/r2/delete-objects', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ objectKeys })
-        })
-    } catch {
-        // Best-effort rollback only.
-    }
 }
 
 export default function HomePage() {
@@ -248,7 +237,7 @@ export default function HomePage() {
                     manifestStoragePath: uploadResult.manifestUpload.objectKey,
                     manifestChunkCount: uploadResult.manifestUpload.totalChunks,
                     manifestChunkSizes: uploadResult.manifestUpload.chunkSizes || null,
-                    expiresAt: new Date(Date.now()).toISOString(), // placeholder, overwritten below
+                    expiresAt: new Date().toISOString(), // placeholder, overwritten below
                     maxDownloads,
                     password: normalizedPassword || null
                 }
@@ -277,7 +266,7 @@ export default function HomePage() {
                     storageBackend: 'r2',
                     chunkCount: uploadResult.totalChunks,
                     chunkSizes: uploadResult.chunkSizes || null,
-                    expiresAt: new Date(Date.now()).toISOString(), // placeholder, overwritten below
+                    expiresAt: new Date().toISOString(), // placeholder, overwritten below
                     maxDownloads,
                     password: normalizedPassword || null
                 }

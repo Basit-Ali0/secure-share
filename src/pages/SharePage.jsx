@@ -42,7 +42,7 @@ function ShareStat({ label, value, accent = 'text-white' }) {
     )
 }
 
-function CollectionListItem({ item, displayName, downloading, onDownload }) {
+function CollectionListItem({ item, displayName, downloading, disabled, onDownload }) {
     const relativePath = item.relativePath && item.relativePath !== item.name ? item.relativePath : null
 
     return (
@@ -61,7 +61,7 @@ function CollectionListItem({ item, displayName, downloading, onDownload }) {
             <button
                 type="button"
                 onClick={onDownload}
-                disabled={downloading}
+                disabled={disabled}
                 className="btn-secondary shrink-0 text-xs px-4 py-2"
             >
                 {downloading ? 'Downloading…' : 'Download'}
@@ -119,6 +119,7 @@ export default function SharePage() {
     const requiresPassword = Boolean(metadata?.is_password_protected) && !isUnlocked
     const isCollection = metadata?.share_kind === 'multi'
     const duplicateNameLabels = collectionManifest?.files ? createDuplicateNameLabels(collectionManifest.files) : {}
+    const collectionInteractionLocked = collectionLoading || collectionDownloadAll || activeCollectionItemId !== '' || downloading
 
     useEffect(() => {
         loadFileMetadata()
@@ -431,7 +432,7 @@ export default function SharePage() {
     }
 
     async function handleDownloadAll() {
-        if (!collectionManifest?.files?.length || !collectionSessionToken) {
+        if (!collectionManifest?.files?.length || !collectionSessionToken || collectionInteractionLocked) {
             return
         }
 
@@ -697,7 +698,7 @@ export default function SharePage() {
                                     <button
                                         type="button"
                                         onClick={handleDownloadAll}
-                                        disabled={collectionDownloadAll}
+                                        disabled={collectionInteractionLocked}
                                         className="btn-primary shrink-0"
                                     >
                                         {collectionDownloadAll ? 'Downloading…' : 'Download all'}
@@ -711,7 +712,11 @@ export default function SharePage() {
                                             item={item}
                                             displayName={duplicateNameLabels[item.itemId] || item.name}
                                             downloading={activeCollectionItemId === item.itemId}
+                                            disabled={collectionInteractionLocked}
                                             onDownload={async () => {
+                                                if (collectionInteractionLocked) {
+                                                    return
+                                                }
                                                 try {
                                                     setDownloading(true)
                                                     await handleCollectionItemDownload(item)

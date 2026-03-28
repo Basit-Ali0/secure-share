@@ -145,6 +145,37 @@ describe('server app routes', () => {
         expect(supabase.insertedRows[0].short_id).toBe(response.body.shortId)
     })
 
+    it('rejects incomplete multi-chunk manifest metadata for multi-file shares', async () => {
+        const supabase = createSupabaseMock({})
+        const app = createApp({
+            env: {
+                VITE_SUPABASE_URL: 'https://example.supabase.co',
+                SUPABASE_SERVICE_KEY: 'service-role-key',
+            },
+            supabase,
+        })
+
+        const response = await request(app)
+            .post('/api/files/metadata')
+            .send({
+                fileId: '123e4567-e89b-12d3-a456-426614174000',
+                shareKind: 'multi',
+                fileCount: 2,
+                totalSize: 2048,
+                collectionItemIds: [
+                    '11111111-1111-1111-1111-111111111111',
+                    '22222222-2222-2222-2222-222222222222'
+                ],
+                manifestStoragePath: buildCollectionManifestObjectKey('123e4567-e89b-12d3-a456-426614174000'),
+                manifestChunkCount: 2,
+                manifestChunkSizes: null,
+                expiresAt: '2099-01-01T00:00:00.000Z'
+            })
+
+        expect(response.status).toBe(400)
+        expect(response.body.message).toContain('manifestChunkSizes')
+    })
+
     it('looks up file metadata by short id', async () => {
         const file = {
             file_id: '123e4567-e89b-12d3-a456-426614174000',
@@ -648,5 +679,43 @@ describe('server app routes', () => {
         expect(allowed.status).toBe(200)
         expect(allowed.body.deleted).toEqual(['shares/demo/manifest.enc'])
         expect(deleteObject).toHaveBeenCalledWith('shares/demo/manifest.enc')
+    })
+
+    it('allows rollback-token based object deletion without the internal secret header', async () => {
+        const deleteObject = vi.fn(async () => undefined)
+        const getPresignedUploadUrl = vi.fn(async () => ({
+            presignedUrl: 'https://upload.example/object',
+            objectKey: 'shares/123e4567-e89b-12d3-a456-426614174000/manifest.enc'
+        }))
+        const app = createApp({
+            env: {
+                VITE_SUPABASE_URL: 'https://example.supabase.co',
+                SUPABASE_SERVICE_KEY: 'service-role-key',
+                CLEANUP_SECRET: 'cleanup-secret',
+            },
+            supabase: createSupabaseMock({}),
+            getPresignedUploadUrl,
+            deleteObject,
+        })
+
+        const presign = await request(app)
+            .post('/api/r2/simple-upload')
+            .send({ objectKey: 'shares/123e4567-e89b-12d3-a456-426614174000/manifest.enc' })
+
+        expect(presign.status).toBe(200)
+        expect(presign.body.rollbackToken).toEqual(expect.any(String))
+
+        const deleteResponse = await request(app)
+            .post('/api/r2/delete-objects')
+            .send({
+                objects: [{
+                    objectKey: presign.body.objectKey,
+                    rollbackToken: presign.body.rollbackToken
+                }]
+            })
+
+        expect(deleteResponse.status).toBe(200)
+        expect(deleteResponse.body.deleted).toEqual([presign.body.objectKey])
+        expect(deleteObject).toHaveBeenCalledWith(presign.body.objectKey)
     })
 })

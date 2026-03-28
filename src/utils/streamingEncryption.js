@@ -81,17 +81,41 @@ export async function deriveCollectionItemMaterial(transferKeyHex, shareId, item
     return deriveKeyMaterial(transferKey, shareId, `maskedfile:item:${itemId}`)
 }
 
-export async function rollbackUploadedObjects(objectKeys) {
-    if (!Array.isArray(objectKeys) || objectKeys.length === 0) {
+export async function rollbackUploadedObjects(objects) {
+    if (!Array.isArray(objects) || objects.length === 0) {
         return
     }
 
     try {
-        await fetch('/api/r2/delete-objects', {
+        const rollbackTargets = objects.filter((value) =>
+            value &&
+            typeof value.objectKey === 'string' &&
+            value.objectKey.length > 0 &&
+            typeof value.rollbackToken === 'string' &&
+            value.rollbackToken.length > 0
+        )
+
+        if (rollbackTargets.length === 0) {
+            return
+        }
+
+        const response = await fetch('/api/r2/delete-objects', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ objectKeys })
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'maskedfile-client'
+            },
+            body: JSON.stringify({ objects: rollbackTargets })
         })
+
+        if (!response.ok) {
+            return
+        }
+
+        const result = await response.json().catch(() => null)
+        if (result && Array.isArray(result.failed) && result.failed.length > 0) {
+            console.warn('Rollback failed for some uploaded objects:', result.failed)
+        }
     } catch {
         // Best-effort rollback only; scheduled cleanup can handle any leftovers.
     }
@@ -179,7 +203,7 @@ async function encryptAndUploadWithMaterial(file, uploadTarget, key, iv, onProgr
 
         onProgress(30, 'Uploading...')
 
-        const { objectKey } = await simpleUploadToR2(
+        const { objectKey, rollbackToken } = await simpleUploadToR2(
             result.encryptedBuffer,
             result.authTag,
             uploadTarget,
@@ -187,13 +211,13 @@ async function encryptAndUploadWithMaterial(file, uploadTarget, key, iv, onProgr
         )
 
         onProgress(100, 'Complete!')
-        return { objectKey, totalChunks: 1, chunkSizes: null }
+        return { objectKey, rollbackToken, totalChunks: 1, chunkSizes: null }
     }
 
     // --- Pipelined multipart: encrypt → upload → free per chunk ---
     onProgress(2, 'Starting upload...')
 
-    const { uploadId, objectKey } = await initiateMultipartUpload(uploadTarget)
+    const { uploadId, objectKey, rollbackToken } = await initiateMultipartUpload(uploadTarget)
 
     const parts = []
     const chunkSizes = []
@@ -231,7 +255,7 @@ async function encryptAndUploadWithMaterial(file, uploadTarget, key, iv, onProgr
     await completeMultipartUpload(objectKey, uploadId, parts)
 
     onProgress(100, 'Complete!')
-    return { objectKey, totalChunks, chunkSizes }
+    return { objectKey, rollbackToken, totalChunks, chunkSizes }
 }
 
 export async function encryptAndUploadStreaming(file, fileId, onProgress = () => { }) {
@@ -256,7 +280,7 @@ export async function encryptAndUploadCollection(fileEntries, shareId, onProgres
     const totalSize = normalizedEntries.reduce((sum, entry) => sum + entry.file.size, 0)
     const { keyHex: transferKeyHex } = await generateTransferKey()
     const manifestItems = []
-    const uploadedObjectKeys = []
+    const uploadedObjects = []
 
     try {
         for (let index = 0; index < normalizedEntries.length; index++) {
@@ -279,7 +303,10 @@ export async function encryptAndUploadCollection(fileEntries, shareId, onProgres
                     stage: 'item'
                 })
             )
-            uploadedObjectKeys.push(uploadResult.objectKey)
+            uploadedObjects.push({
+                objectKey: uploadResult.objectKey,
+                rollbackToken: uploadResult.rollbackToken
+            })
 
             manifestItems.push({
                 itemId: entry.itemId,
@@ -318,7 +345,10 @@ export async function encryptAndUploadCollection(fileEntries, shareId, onProgres
                 stage: 'manifest'
             })
         )
-        uploadedObjectKeys.push(manifestUpload.objectKey)
+        uploadedObjects.push({
+            objectKey: manifestUpload.objectKey,
+            rollbackToken: manifestUpload.rollbackToken
+        })
 
         return {
             shareId,
@@ -328,11 +358,11 @@ export async function encryptAndUploadCollection(fileEntries, shareId, onProgres
             totalSize,
             manifest,
             manifestUpload,
-            uploadedObjectKeys,
+            uploadedObjects,
             items: manifestItems
         }
     } catch (error) {
-        await rollbackUploadedObjects(uploadedObjectKeys)
+        await rollbackUploadedObjects(uploadedObjects)
         throw error
     }
 }

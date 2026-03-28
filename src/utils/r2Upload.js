@@ -49,7 +49,7 @@ export async function simpleUploadToR2(encryptedChunk, authTag, fileIdOrObjectKe
         throw new Error('Failed to get upload URL')
     }
 
-    const { presignedUrl, objectKey } = await response.json()
+    const { presignedUrl, objectKey, rollbackToken } = await response.json()
 
     onProgress(10, 'uploading')
 
@@ -71,7 +71,7 @@ export async function simpleUploadToR2(encryptedChunk, authTag, fileIdOrObjectKe
 
     onProgress(100, 'complete')
 
-    return { objectKey, totalChunks: 1 }
+    return { objectKey, rollbackToken, totalChunks: 1 }
 }
 
 /**
@@ -83,7 +83,7 @@ async function multipartUploadToR2(encryptedChunks, authTags, fileId, onProgress
     onProgress(0, 'initiating')
 
     // 1. Initiate multipart upload
-    const { uploadId, objectKey } = await initiateMultipartUpload(fileId)
+    const { uploadId, objectKey, rollbackToken } = await initiateMultipartUpload(fileId)
 
     try {
         onProgress(5, 'uploading')
@@ -131,7 +131,7 @@ async function multipartUploadToR2(encryptedChunks, authTags, fileId, onProgress
 
         onProgress(100, 'complete')
 
-        return { objectKey, totalChunks, chunkSizes }
+        return { objectKey, rollbackToken, totalChunks, chunkSizes }
     } catch (error) {
         // Abort multipart upload on failure to prevent stale uploads in R2
         try {

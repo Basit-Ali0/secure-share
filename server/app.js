@@ -28,7 +28,8 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 const SHORT_ID_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 const SHORT_ID_LENGTH = 8
 const EXHAUSTED_FILE_DELETE_DELAY_MS = 60 * 60 * 1000
-const DOWNLOAD_SESSION_TTL_MS = 15 * 60 * 1000
+const DOWNLOAD_SESSION_TTL_MS = 2 * 60 * 60 * 1000
+const ROLLBACK_TOKEN_TTL_MS = 2 * 60 * 60 * 1000
 const DEFAULT_SITE_URL = 'https://maskedfile.online'
 
 function normalizeSiteUrl(value) {
@@ -169,6 +170,65 @@ export function createApp(options = {}) {
         return `${payloadToken}.${signature}`
     }
 
+    function getRollbackSecret() {
+        return env.INTERNAL_CLEANUP_SECRET || env.CLEANUP_SECRET
+    }
+
+    function verifySignedToken(token, expectedPayload, secret, invalidMessage, expiredMessage) {
+        if (typeof token !== 'string') {
+            throw new Error(invalidMessage)
+        }
+
+        const [payloadToken, signatureToken] = token.split('.')
+        if (!payloadToken || !signatureToken) {
+            throw new Error(invalidMessage)
+        }
+
+        const expectedSignature = encodeBase64Url(
+            cryptoModule.createHmac('sha256', secret).update(payloadToken).digest()
+        )
+        const signatureBuffer = Buffer.from(signatureToken, 'base64url')
+        const expectedBuffer = Buffer.from(expectedSignature, 'base64url')
+
+        if (
+            signatureBuffer.length !== expectedBuffer.length ||
+            !cryptoModule.timingSafeEqual(signatureBuffer, expectedBuffer)
+        ) {
+            throw new Error(invalidMessage)
+        }
+
+        const payload = JSON.parse(decodeBase64Url(payloadToken).toString('utf8'))
+        if (!expectedPayload(payload)) {
+            throw new Error(invalidMessage)
+        }
+
+        if (typeof payload.exp !== 'number' || payload.exp <= Date.now()) {
+            throw new Error(expiredMessage)
+        }
+
+        return payload
+    }
+
+    function createRollbackToken(objectKey) {
+        const secret = getRollbackSecret()
+        if (!secret) {
+            throw new Error('Rollback secret is not configured')
+        }
+
+        const now = Date.now()
+        const payload = JSON.stringify({
+            objectKey,
+            iat: now,
+            exp: now + ROLLBACK_TOKEN_TTL_MS
+        })
+        const payloadToken = encodeBase64Url(payload)
+        const signature = encodeBase64Url(
+            cryptoModule.createHmac('sha256', secret).update(payloadToken).digest()
+        )
+
+        return `${payloadToken}.${signature}`
+    }
+
     function verifyDownloadSessionToken(token, expectedShareId) {
         const secret = env.DOWNLOAD_SESSION_SECRET
         if (!secret) {
@@ -179,34 +239,28 @@ export function createApp(options = {}) {
             throw new Error('sessionToken is required')
         }
 
-        const [payloadToken, signatureToken] = token.split('.')
-        if (!payloadToken || !signatureToken) {
-            throw new Error('Invalid session token')
-        }
-
-        const expectedSignature = encodeBase64Url(
-            cryptoModule.createHmac('sha256', secret).update(payloadToken).digest()
+        return verifySignedToken(
+            token,
+            (payload) => payload.shareKind === SHARE_KIND_MULTI && payload.shareId === expectedShareId,
+            secret,
+            'Invalid session token',
+            'Download session has expired'
         )
+    }
 
-        const signatureBuffer = Buffer.from(signatureToken, 'base64url')
-        const expectedBuffer = Buffer.from(expectedSignature, 'base64url')
-        if (
-            signatureBuffer.length !== expectedBuffer.length ||
-            !cryptoModule.timingSafeEqual(signatureBuffer, expectedBuffer)
-        ) {
-            throw new Error('Invalid session token')
+    function verifyRollbackToken(token, objectKey) {
+        const secret = getRollbackSecret()
+        if (!secret) {
+            throw new Error('Rollback secret is not configured')
         }
 
-        const payload = JSON.parse(decodeBase64Url(payloadToken).toString('utf8'))
-        if (payload.shareKind !== SHARE_KIND_MULTI || payload.shareId !== expectedShareId) {
-            throw new Error('Invalid session token')
-        }
-
-        if (typeof payload.exp !== 'number' || payload.exp <= Date.now()) {
-            throw new Error('Download session has expired')
-        }
-
-        return payload
+        return verifySignedToken(
+            token,
+            (payload) => payload.objectKey === objectKey,
+            secret,
+            'Invalid rollback token',
+            'Rollback token has expired'
+        )
     }
 
     function generateShortId(length = SHORT_ID_LENGTH) {
@@ -370,6 +424,35 @@ export function createApp(options = {}) {
         return value
     }
 
+    function isPositiveFiniteNumber(value) {
+        return typeof value === 'number' && Number.isFinite(value) && value > 0
+    }
+
+    function validateChunkMetadata(chunkCount, chunkSizes, fieldLabel) {
+        parsePositiveIntegerRequired(chunkCount, `${fieldLabel}Count`)
+
+        if (chunkSizes == null) {
+            if (chunkCount > 1) {
+                throw new Error(`${fieldLabel}Sizes must provide one positive size per chunk when ${fieldLabel}Count is greater than 1`)
+            }
+            return null
+        }
+
+        if (!Array.isArray(chunkSizes)) {
+            throw new Error(`${fieldLabel}Sizes must be an array when provided`)
+        }
+
+        if (chunkSizes.length !== chunkCount) {
+            throw new Error(`${fieldLabel}Sizes must contain exactly ${chunkCount} entries`)
+        }
+
+        if (!chunkSizes.every(isPositiveFiniteNumber)) {
+            throw new Error(`${fieldLabel}Sizes must contain only positive numbers`)
+        }
+
+        return chunkSizes
+    }
+
     async function deleteShareObjects(file) {
         if (file.storage_backend !== 'r2') {
             const objectPaths = []
@@ -399,7 +482,7 @@ export function createApp(options = {}) {
     }
 
     function assertInternalSecret(req, res, contextLabel) {
-        const configuredSecret = env.INTERNAL_CLEANUP_SECRET || env.CLEANUP_SECRET
+        const configuredSecret = getRollbackSecret()
         if (!configuredSecret) {
             console.error(`[${contextLabel}] Internal secret is not configured`)
             res.status(500).json({ message: 'Internal secret is not configured' })
@@ -502,7 +585,10 @@ export function createApp(options = {}) {
             }
 
             const result = await r2.getPresignedUploadUrl(objectKey || fileId)
-            res.json(result)
+            res.json({
+                ...result,
+                rollbackToken: createRollbackToken(result.objectKey)
+            })
         } catch (error) {
             console.error('[R2 Simple Upload] Error:', error)
             res.status(500).json({ message: error.message })
@@ -518,7 +604,10 @@ export function createApp(options = {}) {
             }
 
             const result = await r2.initiateMultipartUpload(objectKey || fileId)
-            res.json(result)
+            res.json({
+                ...result,
+                rollbackToken: createRollbackToken(result.objectKey)
+            })
         } catch (error) {
             console.error('[R2 Initiate] Error:', error)
             res.status(500).json({ message: error.message })
@@ -559,16 +648,34 @@ export function createApp(options = {}) {
 
     app.post('/api/r2/delete-objects', async (req, res) => {
         try {
-            if (!assertInternalSecret(req, res, 'R2 Delete Objects')) {
-                return
-            }
-
-            const objectKeys = Array.isArray(req.body?.objectKeys)
-                ? req.body.objectKeys.filter((value) => typeof value === 'string' && value.length > 0)
+            const rollbackEntries = Array.isArray(req.body?.objects)
+                ? req.body.objects.filter((value) =>
+                    value &&
+                    typeof value.objectKey === 'string' &&
+                    value.objectKey.length > 0 &&
+                    typeof value.rollbackToken === 'string' &&
+                    value.rollbackToken.length > 0
+                )
                 : []
 
-            if (objectKeys.length === 0) {
-                return res.status(400).json({ message: 'objectKeys is required' })
+            let objectKeys = []
+            if (rollbackEntries.length > 0) {
+                for (const entry of rollbackEntries) {
+                    verifyRollbackToken(entry.rollbackToken, entry.objectKey)
+                }
+                objectKeys = rollbackEntries.map((entry) => entry.objectKey)
+            } else {
+                if (!assertInternalSecret(req, res, 'R2 Delete Objects')) {
+                    return
+                }
+
+                objectKeys = Array.isArray(req.body?.objectKeys)
+                    ? req.body.objectKeys.filter((value) => typeof value === 'string' && value.length > 0)
+                    : []
+
+                if (objectKeys.length === 0) {
+                    return res.status(400).json({ message: 'objectKeys is required' })
+                }
             }
 
             const deleted = []
@@ -590,7 +697,10 @@ export function createApp(options = {}) {
             })
         } catch (error) {
             console.error('[R2 Delete Objects] Error:', error)
-            res.status(500).json({ message: error.message })
+            const status = error.message === 'Invalid rollback token' || error.message === 'Rollback token has expired'
+                ? 401
+                : 500
+            res.status(status).json({ message: error.message })
         }
     })
 
@@ -663,19 +773,21 @@ export function createApp(options = {}) {
 
                 try {
                     parsePositiveIntegerRequired(fileCount, 'fileCount')
-                    parsePositiveIntegerRequired(manifestChunkCount, 'manifestChunkCount')
                 } catch (validationError) {
                     return res.status(400).json({ message: validationError.message })
-                }
-
-                if (manifestChunkSizes != null && !Array.isArray(manifestChunkSizes)) {
-                    return res.status(400).json({ message: 'manifestChunkSizes must be an array when provided' })
                 }
                 if (!Array.isArray(collectionItemIds) || collectionItemIds.length !== fileCount) {
                     return res.status(400).json({ message: 'collectionItemIds must be an array matching fileCount for multi-file shares' })
                 }
                 if (!collectionItemIds.every(isValidCollectionItemId)) {
                     return res.status(400).json({ message: 'collectionItemIds must contain valid opaque item ids' })
+                }
+
+                let normalizedManifestChunkSizes
+                try {
+                    normalizedManifestChunkSizes = validateChunkMetadata(manifestChunkCount, manifestChunkSizes, 'manifestChunk')
+                } catch (validationError) {
+                    return res.status(400).json({ message: validationError.message })
                 }
 
                 const shortId = await insertFileMetadataWithShortId({
@@ -685,13 +797,13 @@ export function createApp(options = {}) {
                     file_size: totalSize,
                     storage_path: manifestStoragePath,
                     chunk_count: manifestChunkCount,
-                    chunk_sizes: manifestChunkSizes || null,
+                    chunk_sizes: normalizedManifestChunkSizes,
                     file_count: fileCount,
                     total_size: totalSize,
                     collection_item_ids: collectionItemIds,
                     manifest_storage_path: manifestStoragePath,
                     manifest_chunk_count: manifestChunkCount,
-                    manifest_chunk_sizes: manifestChunkSizes || null
+                    manifest_chunk_sizes: normalizedManifestChunkSizes
                 })
 
                 return res.json({ success: true, fileId, shortId })
@@ -928,9 +1040,11 @@ export function createApp(options = {}) {
                 presignedUrl
             })
         } catch (error) {
-            const status = error.message === 'Download session has expired' || error.message === 'Invalid session token'
-                ? 401
-                : 400
+            const status = error.message === 'sessionToken is required'
+                ? 400
+                : error.message === 'Download session has expired' || error.message === 'Invalid session token'
+                    ? 401
+                    : 500
             console.error('[Authorize Item Download] Error:', error)
             res.status(status).json({ message: error.message })
         }

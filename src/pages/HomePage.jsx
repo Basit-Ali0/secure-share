@@ -199,7 +199,7 @@ export default function HomePage() {
             let shareKind = 'single'
             let keyFragment = ''
             let metadataPayload
-            let uploadedObjectKeys = []
+            let uploadedObjects = []
 
             if (isCollection) {
                 setUploadStage('encrypting')
@@ -227,7 +227,7 @@ export default function HomePage() {
 
                 shareKind = 'multi'
                 keyFragment = `#key=${uploadResult.transferKeyHex}`
-                uploadedObjectKeys = uploadResult.uploadedObjectKeys || []
+                uploadedObjects = uploadResult.uploadedObjects || []
                 metadataPayload = {
                     fileId,
                     shareKind,
@@ -256,7 +256,10 @@ export default function HomePage() {
                 )
 
                 keyFragment = `#key=${uploadResult.keyHex}&iv=${uploadResult.ivHex}`
-                uploadedObjectKeys = [uploadResult.objectKey]
+                uploadedObjects = [{
+                    objectKey: uploadResult.objectKey,
+                    rollbackToken: uploadResult.rollbackToken
+                }]
                 metadataPayload = {
                     fileId,
                     originalName: selectedFile.name,
@@ -292,7 +295,7 @@ export default function HomePage() {
 
             if (!metadataResponse.ok) {
                 const errData = await metadataResponse.json().catch(() => ({}))
-                await rollbackUploadedObjects(uploadedObjectKeys)
+                await rollbackUploadedObjects(uploadedObjects)
                 throw new Error(errData.message || 'Failed to save file metadata')
             }
 

@@ -16,11 +16,10 @@ import {
     SHARE_KIND_MULTI,
     SHARE_KIND_SINGLE,
     normalizeShareKind,
-    buildCollectionItemId,
     buildCollectionItemObjectKey,
     buildCollectionManifestObjectKey,
     buildCollectionSummaryName,
-    parseCollectionItemId
+    isValidCollectionItemId
 } from '../shared/collectionShare.js'
 
 dotenv.config()
@@ -388,8 +387,8 @@ export function createApp(options = {}) {
 
         if (isMultiShare(file)) {
             await r2.deleteObject(file.manifest_storage_path || buildCollectionManifestObjectKey(file.file_id))
-            for (let index = 0; index < getCollectionFileCount(file); index++) {
-                await r2.deleteObject(buildCollectionItemObjectKey(file.file_id, buildCollectionItemId(index)))
+            for (const itemId of file.collection_item_ids || []) {
+                await r2.deleteObject(buildCollectionItemObjectKey(file.file_id, itemId))
             }
             return
         }
@@ -532,6 +531,39 @@ export function createApp(options = {}) {
         }
     })
 
+    app.post('/api/r2/delete-objects', async (req, res) => {
+        try {
+            const objectKeys = Array.isArray(req.body?.objectKeys)
+                ? req.body.objectKeys.filter((value) => typeof value === 'string' && value.length > 0)
+                : []
+
+            if (objectKeys.length === 0) {
+                return res.status(400).json({ message: 'objectKeys is required' })
+            }
+
+            const deleted = []
+            const failed = []
+
+            for (const objectKey of objectKeys) {
+                try {
+                    await r2.deleteObject(objectKey)
+                    deleted.push(objectKey)
+                } catch (error) {
+                    failed.push({ objectKey, message: error.message })
+                }
+            }
+
+            res.json({
+                success: failed.length === 0,
+                deleted,
+                failed
+            })
+        } catch (error) {
+            console.error('[R2 Delete Objects] Error:', error)
+            res.status(500).json({ message: error.message })
+        }
+    })
+
     app.get('/api/r2/download/*', async (req, res) => {
         res.status(410).json({ message: 'Direct downloads are disabled. Authorize downloads via /api/files/:identifier/authorize-download.' })
     })
@@ -553,6 +585,7 @@ export function createApp(options = {}) {
                 manifestStoragePath,
                 manifestChunkCount,
                 manifestChunkSizes,
+                collectionItemIds,
                 expiresAt,
                 maxDownloads,
                 password
@@ -608,6 +641,12 @@ export function createApp(options = {}) {
                 if (manifestChunkSizes != null && !Array.isArray(manifestChunkSizes)) {
                     return res.status(400).json({ message: 'manifestChunkSizes must be an array when provided' })
                 }
+                if (!Array.isArray(collectionItemIds) || collectionItemIds.length !== fileCount) {
+                    return res.status(400).json({ message: 'collectionItemIds must be an array matching fileCount for multi-file shares' })
+                }
+                if (!collectionItemIds.every(isValidCollectionItemId)) {
+                    return res.status(400).json({ message: 'collectionItemIds must contain valid opaque item ids' })
+                }
 
                 const shortId = await insertFileMetadataWithShortId({
                     ...baseRecord,
@@ -619,6 +658,7 @@ export function createApp(options = {}) {
                     chunk_sizes: manifestChunkSizes || null,
                     file_count: fileCount,
                     total_size: totalSize,
+                    collection_item_ids: collectionItemIds,
                     manifest_storage_path: manifestStoragePath,
                     manifest_chunk_count: manifestChunkCount,
                     manifest_chunk_sizes: manifestChunkSizes || null
@@ -823,7 +863,7 @@ export function createApp(options = {}) {
             const sessionToken = req.body?.sessionToken
             const { data: file, error } = await findFileByIdentifier(
                 identifier,
-                'file_id, short_id, share_kind, file_count, storage_backend, expires_at'
+                'file_id, short_id, share_kind, file_count, collection_item_ids, storage_backend, expires_at'
             )
 
             if (error || !file) {
@@ -838,9 +878,11 @@ export function createApp(options = {}) {
                 return res.status(410).json({ message: 'File has expired' })
             }
 
-            const itemIndex = parseCollectionItemId(itemId)
-            if (itemIndex == null || itemIndex >= getCollectionFileCount(file)) {
+            if (!isValidCollectionItemId(itemId)) {
                 return res.status(400).json({ message: 'Invalid itemId' })
+            }
+            if (!Array.isArray(file.collection_item_ids) || !file.collection_item_ids.includes(itemId)) {
+                return res.status(403).json({ message: 'Item does not belong to this collection' })
             }
 
             verifyDownloadSessionToken(sessionToken, file.file_id)
@@ -883,7 +925,7 @@ export function createApp(options = {}) {
 
             const { data: expiredFiles, error: fetchError } = await supabase
                 .from('files')
-                .select('file_id, share_kind, file_count, storage_path, storage_backend, original_name, manifest_storage_path')
+                .select('file_id, share_kind, file_count, collection_item_ids, storage_path, storage_backend, original_name, manifest_storage_path')
                 .lt('expires_at', new Date().toISOString())
 
             if (fetchError) {

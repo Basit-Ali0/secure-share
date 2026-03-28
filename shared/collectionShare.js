@@ -1,36 +1,13 @@
 export const SHARE_KIND_SINGLE = 'single'
 export const SHARE_KIND_MULTI = 'multi'
-export const COLLECTION_ITEM_ID_PAD_LENGTH = 6
-export const COLLECTION_ITEM_ID_REGEX = new RegExp(`^item-(\\d{${COLLECTION_ITEM_ID_PAD_LENGTH}})$`)
+export const COLLECTION_ITEM_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export function normalizeShareKind(value) {
     return value === SHARE_KIND_MULTI ? SHARE_KIND_MULTI : SHARE_KIND_SINGLE
 }
 
-export function buildCollectionItemId(index) {
-    if (!Number.isInteger(index) || index < 0) {
-        throw new Error('Collection item index must be a non-negative integer')
-    }
-
-    return `item-${String(index + 1).padStart(COLLECTION_ITEM_ID_PAD_LENGTH, '0')}`
-}
-
-export function parseCollectionItemId(itemId) {
-    if (typeof itemId !== 'string') {
-        return null
-    }
-
-    const match = itemId.match(COLLECTION_ITEM_ID_REGEX)
-    if (!match) {
-        return null
-    }
-
-    const numericIndex = Number(match[1])
-    if (!Number.isInteger(numericIndex) || numericIndex < 1) {
-        return null
-    }
-
-    return numericIndex - 1
+export function isValidCollectionItemId(itemId) {
+    return typeof itemId === 'string' && COLLECTION_ITEM_ID_REGEX.test(itemId)
 }
 
 export function buildCollectionManifestObjectKey(shareId) {

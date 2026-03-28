@@ -12,7 +12,6 @@ import {
     completeMultipartUpload
 } from './r2Upload.js'
 import {
-    buildCollectionItemId,
     buildCollectionItemObjectKey,
     buildCollectionManifestObjectKey
 } from '../../shared/collectionShare.js'
@@ -80,6 +79,22 @@ export async function deriveCollectionManifestMaterial(transferKeyHex, shareId) 
 export async function deriveCollectionItemMaterial(transferKeyHex, shareId, itemId) {
     const transferKey = new Uint8Array(hexToArrayBuffer(transferKeyHex))
     return deriveKeyMaterial(transferKey, shareId, `maskedfile:item:${itemId}`)
+}
+
+async function rollbackUploadedObjects(objectKeys) {
+    if (!Array.isArray(objectKeys) || objectKeys.length === 0) {
+        return
+    }
+
+    try {
+        await fetch('/api/r2/delete-objects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ objectKeys })
+        })
+    } catch {
+        // Best-effort rollback only; scheduled cleanup can handle any leftovers.
+    }
 }
 
 /**
@@ -234,77 +249,91 @@ export async function encryptAndUploadCollection(fileEntries, shareId, onProgres
     const normalizedEntries = fileEntries.map((entry, index) => ({
         file: entry.file,
         relativePath: entry.relativePath || entry.file.webkitRelativePath || entry.file.name,
-        itemId: buildCollectionItemId(index)
+        itemId: crypto.randomUUID(),
+        order: index
     }))
     const totalFiles = normalizedEntries.length
     const totalSize = normalizedEntries.reduce((sum, entry) => sum + entry.file.size, 0)
     const { keyHex: transferKeyHex } = await generateTransferKey()
     const manifestItems = []
+    const uploadedObjectKeys = []
 
-    for (let index = 0; index < normalizedEntries.length; index++) {
-        const entry = normalizedEntries[index]
-        const material = await deriveCollectionItemMaterial(transferKeyHex, shareId, entry.itemId)
-        const uploadResult = await encryptAndUploadWithMaterial(
-            entry.file,
-            buildCollectionItemObjectKey(shareId, entry.itemId),
-            material.key,
-            material.iv,
+    try {
+        for (let index = 0; index < normalizedEntries.length; index++) {
+            const entry = normalizedEntries[index]
+            const material = await deriveCollectionItemMaterial(transferKeyHex, shareId, entry.itemId)
+            const randomIv = crypto.getRandomValues(new Uint8Array(12))
+            const objectKey = buildCollectionItemObjectKey(shareId, entry.itemId)
+            const uploadResult = await encryptAndUploadWithMaterial(
+                entry.file,
+                objectKey,
+                material.key,
+                randomIv,
+                (progress, statusText) => onProgress({
+                    progress,
+                    statusText,
+                    itemIndex: index,
+                    totalFiles,
+                    currentFileName: entry.file.name,
+                    currentItemId: entry.itemId,
+                    stage: 'item'
+                })
+            )
+            uploadedObjectKeys.push(uploadResult.objectKey)
+
+            manifestItems.push({
+                itemId: entry.itemId,
+                order: entry.order,
+                name: entry.file.name,
+                relativePath: entry.relativePath,
+                size: entry.file.size,
+                type: entry.file.type,
+                ivHex: arrayBufferToHex(randomIv.buffer),
+                chunkCount: uploadResult.totalChunks,
+                chunkSizes: uploadResult.chunkSizes || null
+            })
+        }
+
+        const manifest = {
+            version: 1,
+            shareId,
+            fileCount: totalFiles,
+            totalSize,
+            files: manifestItems
+        }
+        const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' })
+        const manifestMaterial = await deriveCollectionManifestMaterial(transferKeyHex, shareId)
+        const manifestUpload = await encryptAndUploadWithMaterial(
+            manifestBlob,
+            buildCollectionManifestObjectKey(shareId),
+            manifestMaterial.key,
+            manifestMaterial.iv,
             (progress, statusText) => onProgress({
                 progress,
                 statusText,
-                itemIndex: index,
-                totalFiles,
-                currentFileName: entry.file.name,
-                currentItemId: entry.itemId,
-                stage: 'item'
+                itemIndex: totalFiles,
+                totalFiles: totalFiles + 1,
+                currentFileName: 'Share manifest',
+                currentItemId: 'manifest',
+                stage: 'manifest'
             })
         )
+        uploadedObjectKeys.push(manifestUpload.objectKey)
 
-        manifestItems.push({
-            itemId: entry.itemId,
-            name: entry.file.name,
-            relativePath: entry.relativePath,
-            size: entry.file.size,
-            type: entry.file.type,
-            chunkCount: uploadResult.totalChunks,
-            chunkSizes: uploadResult.chunkSizes || null
-        })
-    }
-
-    const manifest = {
-        version: 1,
-        shareId,
-        fileCount: totalFiles,
-        totalSize,
-        files: manifestItems
-    }
-    const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' })
-    const manifestMaterial = await deriveCollectionManifestMaterial(transferKeyHex, shareId)
-    const manifestUpload = await encryptAndUploadWithMaterial(
-        manifestBlob,
-        buildCollectionManifestObjectKey(shareId),
-        manifestMaterial.key,
-        manifestMaterial.iv,
-        (progress, statusText) => onProgress({
-            progress,
-            statusText,
-            itemIndex: totalFiles,
-            totalFiles: totalFiles + 1,
-            currentFileName: 'Share manifest',
-            currentItemId: 'manifest',
-            stage: 'manifest'
-        })
-    )
-
-    return {
-        shareId,
-        shareKind: 'multi',
-        transferKeyHex,
-        fileCount: totalFiles,
-        totalSize,
-        manifest,
-        manifestUpload,
-        items: manifestItems
+        return {
+            shareId,
+            shareKind: 'multi',
+            transferKeyHex,
+            fileCount: totalFiles,
+            totalSize,
+            manifest,
+            manifestUpload,
+            uploadedObjectKeys,
+            items: manifestItems
+        }
+    } catch (error) {
+        await rollbackUploadedObjects(uploadedObjectKeys)
+        throw error
     }
 }
 

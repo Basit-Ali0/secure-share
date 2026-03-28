@@ -182,12 +182,16 @@ describe('server app routes', () => {
     })
 
     it('returns collection summary metadata for multi-file shares', async () => {
+        const itemIdOne = '11111111-1111-1111-1111-111111111111'
+        const itemIdTwo = '22222222-2222-2222-2222-222222222222'
+        const itemIdThree = '33333333-3333-3333-3333-333333333333'
         const file = {
             file_id: '123e4567-e89b-12d3-a456-426614174000',
             short_id: 'Pack1234',
             share_kind: 'multi',
             file_count: 3,
             total_size: 4096,
+            collection_item_ids: [itemIdOne, itemIdTwo, itemIdThree],
             manifest_storage_path: buildCollectionManifestObjectKey('123e4567-e89b-12d3-a456-426614174000'),
             manifest_chunk_count: 1,
             manifest_chunk_sizes: null,
@@ -340,12 +344,15 @@ describe('server app routes', () => {
     })
 
     it('authorizes multi-file downloads by returning a manifest URL and session token', async () => {
+        const itemIdOne = '11111111-1111-1111-1111-111111111111'
+        const itemIdTwo = '22222222-2222-2222-2222-222222222222'
         const file = {
             file_id: '123e4567-e89b-12d3-a456-426614174000',
             short_id: 'Pack1234',
             share_kind: 'multi',
             file_count: 2,
             total_size: 4096,
+            collection_item_ids: [itemIdOne, itemIdTwo],
             manifest_storage_path: buildCollectionManifestObjectKey('123e4567-e89b-12d3-a456-426614174000'),
             manifest_chunk_count: 1,
             manifest_chunk_sizes: null,
@@ -381,12 +388,15 @@ describe('server app routes', () => {
     })
 
     it('authorizes individual collection items when the session token is valid', async () => {
+        const itemIdOne = '11111111-1111-1111-1111-111111111111'
+        const itemIdTwo = '22222222-2222-2222-2222-222222222222'
         const file = {
             file_id: '123e4567-e89b-12d3-a456-426614174000',
             short_id: 'Pack1234',
             share_kind: 'multi',
             file_count: 2,
             total_size: 4096,
+            collection_item_ids: [itemIdOne, itemIdTwo],
             manifest_storage_path: buildCollectionManifestObjectKey('123e4567-e89b-12d3-a456-426614174000'),
             storage_backend: 'r2',
             expires_at: '2099-01-01T00:00:00.000Z',
@@ -418,14 +428,56 @@ describe('server app routes', () => {
             .post(`/api/files/${file.short_id}/authorize-item-download`)
             .send({
                 sessionToken: authorizeShare.body.sessionToken,
-                itemId: 'item-000001'
+                itemId: itemIdOne
             })
 
         expect(authorizeItem.status).toBe(200)
         expect(authorizeItem.body.presignedUrl).toBe('https://download.example/item')
         expect(getPresignedDownloadUrl).toHaveBeenCalledWith(
-            buildCollectionItemObjectKey(file.file_id, 'item-000001')
+            buildCollectionItemObjectKey(file.file_id, itemIdOne)
         )
+    })
+
+    it('rejects item download requests for item ids outside the collection membership list', async () => {
+        const itemIdOne = '11111111-1111-1111-1111-111111111111'
+        const file = {
+            file_id: '123e4567-e89b-12d3-a456-426614174000',
+            short_id: 'Pack1234',
+            share_kind: 'multi',
+            file_count: 1,
+            collection_item_ids: [itemIdOne],
+            storage_backend: 'r2',
+            expires_at: '2099-01-01T00:00:00.000Z',
+            download_count: 0,
+            max_downloads: null,
+            password_hash: null,
+        }
+        const supabase = createSupabaseMock({
+            filesById: { [file.file_id]: file },
+            filesByShortId: { [file.short_id]: file },
+            authorizeDownloadResult: [{ download_count: 1, max_downloads: null, exhausted: false }],
+        })
+
+        const app = createApp({
+            env: {
+                VITE_SUPABASE_URL: 'https://example.supabase.co',
+                SUPABASE_SERVICE_KEY: 'service-role-key',
+                DOWNLOAD_SESSION_SECRET: 'session-secret',
+            },
+            supabase,
+            getPresignedDownloadUrl: vi.fn(async () => ({ presignedUrl: 'https://download.example/item' })),
+        })
+
+        const authorizeShare = await request(app).post(`/api/files/${file.short_id}/authorize-download`)
+        const response = await request(app)
+            .post(`/api/files/${file.short_id}/authorize-item-download`)
+            .send({
+                sessionToken: authorizeShare.body.sessionToken,
+                itemId: '99999999-9999-9999-9999-999999999999'
+            })
+
+        expect(response.status).toBe(403)
+        expect(response.body.message).toBe('Item does not belong to this collection')
     })
 
     it('blocks downloads once max_downloads is exhausted', async () => {

@@ -42,7 +42,7 @@ function ShareStat({ label, value, accent = 'text-white' }) {
     )
 }
 
-function CollectionListItem({ item, downloading, onDownload }) {
+function CollectionListItem({ item, displayName, downloading, onDownload }) {
     const relativePath = item.relativePath && item.relativePath !== item.name ? item.relativePath : null
 
     return (
@@ -51,7 +51,7 @@ function CollectionListItem({ item, downloading, onDownload }) {
                 <span className="material-symbols-outlined text-[22px]">description</span>
             </div>
             <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-white">{item.name}</p>
+                <p className="truncate text-sm font-medium text-white">{displayName}</p>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-on-surface-variant">
                     <span>{formatFileSize(item.size)}</span>
                     {item.type ? <span>• {item.type}</span> : null}
@@ -68,6 +68,18 @@ function CollectionListItem({ item, downloading, onDownload }) {
             </button>
         </div>
     )
+}
+
+function createDuplicateNameLabels(files) {
+    const counts = new Map()
+    return files.reduce((acc, item) => {
+        const currentCount = (counts.get(item.name) || 0) + 1
+        counts.set(item.name, currentCount)
+        acc[item.itemId] = currentCount > 1 && (!item.relativePath || item.relativePath === item.name)
+            ? `${item.name} (${currentCount})`
+            : item.name
+        return acc
+    }, {})
 }
 
 export default function SharePage() {
@@ -105,6 +117,7 @@ export default function SharePage() {
     const limitReached = maxDownloads != null && remainingDownloads <= 0
     const requiresPassword = Boolean(metadata?.is_password_protected) && !isUnlocked
     const isCollection = metadata?.share_kind === 'multi'
+    const duplicateNameLabels = collectionManifest?.files ? createDuplicateNameLabels(collectionManifest.files) : {}
 
     useEffect(() => {
         loadFileMetadata()
@@ -300,7 +313,7 @@ export default function SharePage() {
             item.chunkCount || 1,
             item.chunkSizes || null,
             itemMaterial.keyHex,
-            itemMaterial.ivHex,
+            item.ivHex,
             item.name,
             (progress, statusText) => {
                 setDownloadProgress(progress)
@@ -693,6 +706,7 @@ export default function SharePage() {
                                         <CollectionListItem
                                             key={item.itemId}
                                             item={item}
+                                            displayName={duplicateNameLabels[item.itemId] || item.name}
                                             downloading={activeCollectionItemId === item.itemId}
                                             onDownload={async () => {
                                                 try {

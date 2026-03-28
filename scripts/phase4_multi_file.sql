@@ -8,6 +8,9 @@ alter table public.files
 add column if not exists total_size bigint;
 
 alter table public.files
+add column if not exists collection_item_ids text[];
+
+alter table public.files
 add column if not exists manifest_storage_path text;
 
 alter table public.files

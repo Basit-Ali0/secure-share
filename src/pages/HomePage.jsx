@@ -78,6 +78,22 @@ function formatCollectionCount(count) {
     return `${count} file${count === 1 ? '' : 's'}`
 }
 
+async function rollbackUploadedObjects(objectKeys) {
+    if (!Array.isArray(objectKeys) || objectKeys.length === 0) {
+        return
+    }
+
+    try {
+        await fetch('/api/r2/delete-objects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ objectKeys })
+        })
+    } catch {
+        // Best-effort rollback only.
+    }
+}
+
 export default function HomePage() {
     const prefersReducedMotion = useReducedMotion()
     const shellTransition = prefersReducedMotion
@@ -194,6 +210,7 @@ export default function HomePage() {
             let shareKind = 'single'
             let keyFragment = ''
             let metadataPayload
+            let uploadedObjectKeys = []
 
             if (isCollection) {
                 setUploadStage('encrypting')
@@ -221,11 +238,13 @@ export default function HomePage() {
 
                 shareKind = 'multi'
                 keyFragment = `#key=${uploadResult.transferKeyHex}`
+                uploadedObjectKeys = uploadResult.uploadedObjectKeys || []
                 metadataPayload = {
                     fileId,
                     shareKind,
                     fileCount: uploadResult.fileCount,
                     totalSize: uploadResult.totalSize,
+                    collectionItemIds: uploadResult.items.map((item) => item.itemId),
                     manifestStoragePath: uploadResult.manifestUpload.objectKey,
                     manifestChunkCount: uploadResult.manifestUpload.totalChunks,
                     manifestChunkSizes: uploadResult.manifestUpload.chunkSizes || null,
@@ -248,6 +267,7 @@ export default function HomePage() {
                 )
 
                 keyFragment = `#key=${uploadResult.keyHex}&iv=${uploadResult.ivHex}`
+                uploadedObjectKeys = [uploadResult.objectKey]
                 metadataPayload = {
                     fileId,
                     originalName: selectedFile.name,
@@ -283,6 +303,7 @@ export default function HomePage() {
 
             if (!metadataResponse.ok) {
                 const errData = await metadataResponse.json().catch(() => ({}))
+                await rollbackUploadedObjects(uploadedObjectKeys)
                 throw new Error(errData.message || 'Failed to save file metadata')
             }
 

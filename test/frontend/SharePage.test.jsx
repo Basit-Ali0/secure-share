@@ -72,7 +72,16 @@ describe('SharePage', () => {
             }))
         vi.mocked(downloadAndDecryptManifest).mockResolvedValueOnce({
             files: [
-                { itemId: 'item-000001', name: 'one.txt', relativePath: 'one.txt', size: 12, type: 'text/plain', chunkCount: 1, chunkSizes: null }
+                {
+                    itemId: '11111111-1111-1111-1111-111111111111',
+                    name: 'one.txt',
+                    relativePath: 'one.txt',
+                    size: 12,
+                    type: 'text/plain',
+                    ivHex: 'abcdef',
+                    chunkCount: 1,
+                    chunkSizes: null
+                }
             ]
         })
 

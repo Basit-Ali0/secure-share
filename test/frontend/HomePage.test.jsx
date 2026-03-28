@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { HelmetProvider } from 'react-helmet-async'
 import { vi } from 'vitest'
 import HomePage from '../../src/pages/HomePage.jsx'
-import { encryptAndUploadStreaming } from '../../src/utils/streamingEncryption'
+import { encryptAndUploadCollection, encryptAndUploadStreaming } from '../../src/utils/streamingEncryption'
 import { buildCanonicalUrl, DEFAULT_TITLE, SITE_NAME } from '../../src/lib/siteConfig.js'
 
 vi.mock('../../src/utils/streamingEncryption', () => ({
@@ -12,6 +12,20 @@ vi.mock('../../src/utils/streamingEncryption', () => ({
         ivHex: 'iv',
         totalChunks: 1,
         chunkSizes: null,
+    })),
+    encryptAndUploadCollection: vi.fn(async () => ({
+        shareId: '123',
+        shareKind: 'multi',
+        transferKeyHex: 'multi-key',
+        fileCount: 2,
+        totalSize: 10,
+        manifest: { files: [] },
+        manifestUpload: {
+            objectKey: 'shares/123/manifest.enc',
+            totalChunks: 1,
+            chunkSizes: null,
+        },
+        items: []
     })),
     terminateWorkerPool: vi.fn(),
 }))
@@ -36,6 +50,11 @@ describe('HomePage', () => {
     function selectFile(container, file = new File(['hello'], 'demo.txt', { type: 'text/plain' })) {
         const input = container.querySelector('input[type="file"]')
         fireEvent.change(input, { target: { files: [file] } })
+    }
+
+    function selectFiles(container, files) {
+        const input = container.querySelector('input[type="file"]')
+        fireEvent.change(input, { target: { files } })
     }
 
     function renderHomePage() {
@@ -63,6 +82,7 @@ describe('HomePage', () => {
             expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('Download limit must be a whole number greater than 0'))
         })
         expect(uploadSpy).not.toHaveBeenCalled()
+        expect(vi.mocked(encryptAndUploadCollection)).not.toHaveBeenCalled()
     })
 
     it('rejects non-integer max-download values', async () => {
@@ -78,6 +98,7 @@ describe('HomePage', () => {
             expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('Download limit must be a whole number greater than 0'))
         })
         expect(uploadSpy).not.toHaveBeenCalled()
+        expect(vi.mocked(encryptAndUploadCollection)).not.toHaveBeenCalled()
     })
 
     it('rejects password confirmation mismatch', async () => {
@@ -94,6 +115,7 @@ describe('HomePage', () => {
             expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('Password confirmation does not match'))
         })
         expect(uploadSpy).not.toHaveBeenCalled()
+        expect(vi.mocked(encryptAndUploadCollection)).not.toHaveBeenCalled()
     })
 
     it('prefers short links when the backend returns shortId', async () => {
@@ -104,6 +126,19 @@ describe('HomePage', () => {
 
         await screen.findByText(/secure share ready/i)
         expect(screen.getByText(/\/s\/Short123#key=key&iv=iv/i)).toBeInTheDocument()
+    })
+
+    it('creates collection links with a transfer key fragment for multi-file uploads', async () => {
+        const { container } = renderHomePage()
+        selectFiles(container, [
+            new File(['a'], 'one.txt', { type: 'text/plain' }),
+            new File(['b'], 'two.txt', { type: 'text/plain' })
+        ])
+
+        fireEvent.click(await screen.findByRole('button', { name: /secure & send/i }))
+
+        await screen.findByText(/secure share ready/i)
+        expect(screen.getByText(/\/s\/Short123#key=multi-key/i)).toBeInTheDocument()
     })
 
     it('sets canonical metadata for the home page', async () => {

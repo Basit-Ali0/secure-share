@@ -2,9 +2,17 @@ import { useState, useRef } from 'react'
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024 // 5GB
 
-export default function DragDropZone({ onFileSelect, selectedFile }) {
+function normalizeEntries(fileList) {
+    return Array.from(fileList).map((file) => ({
+        file,
+        relativePath: file.webkitRelativePath || file.name
+    }))
+}
+
+export default function DragDropZone({ onFileSelect }) {
     const [isDragging, setIsDragging] = useState(false)
     const fileInputRef = useRef(null)
+    const folderInputRef = useRef(null)
     const dragCounter = useRef(0)
 
     const handleDragEnter = (e) => {
@@ -37,31 +45,37 @@ export default function DragDropZone({ onFileSelect, selectedFile }) {
 
         const files = e.dataTransfer.files
         if (files && files.length > 0) {
-            handleFileSelection(files[0])
+            handleFileSelection(normalizeEntries(files))
         }
     }
 
     const handleFileInput = (e) => {
         const files = e.target.files
         if (files && files.length > 0) {
-            handleFileSelection(files[0])
+            handleFileSelection(normalizeEntries(files))
         }
         // Reset input so re-selecting the same file triggers onChange
         e.target.value = ''
     }
 
-    const handleFileSelection = (file) => {
-        if (file.size > MAX_FILE_SIZE) {
+    const handleFileSelection = (entries) => {
+        const oversizeFile = entries.find((entry) => entry.file.size > MAX_FILE_SIZE)
+        if (oversizeFile) {
             alert('File is too large. Maximum size is 5GB.')
             return
         }
         if (onFileSelect) {
-            onFileSelect(file)
+            onFileSelect(entries)
         }
     }
 
     const handleClick = () => {
         fileInputRef.current?.click()
+    }
+
+    const handleFolderClick = (event) => {
+        event.stopPropagation()
+        folderInputRef.current?.click()
     }
 
     return (
@@ -82,9 +96,19 @@ export default function DragDropZone({ onFileSelect, selectedFile }) {
             <input
                 ref={fileInputRef}
                 type="file"
+                multiple
                 onChange={handleFileInput}
                 className="hidden"
                 accept="*"
+            />
+            <input
+                ref={folderInputRef}
+                type="file"
+                multiple
+                webkitdirectory=""
+                directory=""
+                onChange={handleFileInput}
+                className="hidden"
             />
 
             <span className={`
@@ -109,7 +133,14 @@ export default function DragDropZone({ onFileSelect, selectedFile }) {
                 }}
                 className="mt-4 px-6 py-2.5 rounded-full bg-surface-variant text-primary border border-primary/30 text-sm font-medium shadow-sm hover:shadow-md hover:bg-primary/10 transition-all z-10"
             >
-                Choose File
+                Choose Files
+            </button>
+            <button
+                type="button"
+                onClick={handleFolderClick}
+                className="mt-2 px-6 py-2 rounded-full text-xs font-medium text-on-surface-variant border border-outline/60 hover:border-primary/30 hover:text-white hover:bg-white/5 transition-all z-10"
+            >
+                Choose Folder
             </button>
         </div>
     )

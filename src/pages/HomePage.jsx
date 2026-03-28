@@ -6,7 +6,7 @@ import UploadProgress from '../components/FileUpload/UploadProgress'
 import ExpirySelector, { EXPIRY_OPTIONS } from '../components/FileUpload/ExpirySelector'
 import FilePreviewModal from '../components/FileUpload/FilePreviewModal'
 import QRCode from '../components/SharePage/QRCode'
-import { encryptAndUploadStreaming, terminateWorkerPool } from '../utils/streamingEncryption'
+import { encryptAndUploadCollection, encryptAndUploadStreaming, terminateWorkerPool } from '../utils/streamingEncryption'
 import { formatFileSize } from '../utils/fileUtils'
 import { buildCanonicalUrl, DEFAULT_DESCRIPTION, DEFAULT_TITLE, OG_IMAGE_URL, SITE_NAME } from '../lib/siteConfig'
 import { trackEvent } from '../lib/analytics'
@@ -70,16 +70,27 @@ function getStageFromStatus(statusText) {
     return 'preparing'
 }
 
+function flattenSelection(entries) {
+    return entries.map((entry) => entry.file)
+}
+
+function formatCollectionCount(count) {
+    return `${count} file${count === 1 ? '' : 's'}`
+}
+
 export default function HomePage() {
     const prefersReducedMotion = useReducedMotion()
     const shellTransition = prefersReducedMotion
         ? { duration: 0 }
         : { duration: 0.32, ease: [0.22, 1, 0.36, 1] }
-    const [selectedFile, setSelectedFile] = useState(null)
+    const [selectedEntries, setSelectedEntries] = useState([])
     const [uploading, setUploading] = useState(false)
     const [uploadProgress, setUploadProgress] = useState(0)
     const [uploadStatus, setUploadStatus] = useState('')
     const [uploadStage, setUploadStage] = useState('')
+    const [uploadContextLabel, setUploadContextLabel] = useState('')
+    const [uploadDisplayName, setUploadDisplayName] = useState('')
+    const [uploadDisplayMeta, setUploadDisplayMeta] = useState('')
     const [shareUrl, setShareUrl] = useState(null)
     const [shareSummary, setShareSummary] = useState(null)
     const [copied, setCopied] = useState(false)
@@ -101,11 +112,14 @@ export default function HomePage() {
         setUploadStage('')
         setUploadStatus('')
         setUploadProgress(0)
+        setUploadContextLabel('')
+        setUploadDisplayName('')
+        setUploadDisplayMeta('')
         setShareSummary(null)
     }
 
-    const handleFileSelect = (file) => {
-        setSelectedFile(file)
+    const handleFileSelect = (entries) => {
+        setSelectedEntries(entries)
         setShareUrl(null)
         setCopied(false)
         setShowQR(false)
@@ -114,7 +128,7 @@ export default function HomePage() {
     }
 
     const clearSelectedFile = () => {
-        setSelectedFile(null)
+        setSelectedEntries([])
         setShowAdvancedProtection(false)
         setShowPreview(false)
     }
@@ -123,12 +137,25 @@ export default function HomePage() {
         setShareUrl(null)
         setShowQR(false)
         setCopied(false)
-        setSelectedFile(null)
+        setSelectedEntries([])
         resetUploadSettings()
     }
 
+    const selectedFiles = flattenSelection(selectedEntries)
+    const selectedFile = selectedFiles.length === 1 ? selectedFiles[0] : null
+    const isCollection = selectedEntries.length > 1
+    const totalSelectedSize = selectedEntries.reduce((sum, entry) => sum + entry.file.size, 0)
+    const selectionTitle = isCollection
+        ? `${formatCollectionCount(selectedEntries.length)} selected`
+        : selectedFile?.name || ''
+    const selectionChips = isCollection
+        ? [formatCollectionCount(selectedEntries.length), formatFileSize(totalSelectedSize)]
+        : selectedFile
+            ? [formatFileSize(selectedFile.size), fileTypeLabel(selectedFile)]
+            : []
+
     const handleUpload = async () => {
-        if (!selectedFile) return
+        if (selectedEntries.length === 0) return
 
         try {
             const trimmedMaxDownloads = maxDownloadsInput.trim()
@@ -153,26 +180,88 @@ export default function HomePage() {
             setUploadProgress(0)
             setUploadStage('preparing')
             setUploadStatus('Preparing secure upload...')
+            setUploadContextLabel(isCollection ? `Collection of ${formatCollectionCount(selectedEntries.length)}` : '')
+            setUploadDisplayName(selectionTitle)
+            setUploadDisplayMeta(isCollection ? formatFileSize(totalSelectedSize) : `${formatFileSize(selectedFile.size)} - ${fileTypeLabel(selectedFile)}`)
             setShowQR(false)
             trackEvent('upload_started', {
                 category: 'engagement',
-                label: selectedFile.type || 'unknown',
+                label: isCollection ? 'multi' : (selectedFile.type || 'unknown'),
             })
 
             const fileId = crypto.randomUUID()
+            let sharePath
+            let shareKind = 'single'
+            let keyFragment = ''
+            let metadataPayload
 
-            setUploadStage('encrypting')
-            setUploadStatus('Encrypting locally...')
+            if (isCollection) {
+                setUploadStage('encrypting')
+                setUploadStatus('Encrypting collection locally...')
 
-            const uploadResult = await encryptAndUploadStreaming(
-                selectedFile,
-                fileId,
-                (progress, statusText) => {
-                    setUploadProgress(progress * 0.95)
-                    setUploadStatus(statusText)
-                    setUploadStage(getStageFromStatus(statusText))
+                const uploadResult = await encryptAndUploadCollection(
+                    selectedEntries,
+                    fileId,
+                    ({ progress, statusText, itemIndex, totalFiles, currentFileName, stage }) => {
+                        setUploadProgress(progress * 0.95)
+                        setUploadStatus(statusText)
+                        setUploadStage(stage === 'manifest' ? 'saving' : getStageFromStatus(statusText))
+                        setUploadDisplayName(currentFileName || selectionTitle)
+                        setUploadDisplayMeta(currentFileName === 'Share manifest'
+                            ? `${formatCollectionCount(selectedEntries.length)} - ${formatFileSize(totalSelectedSize)}`
+                            : `File ${itemIndex + 1} of ${totalFiles}`
+                        )
+                        setUploadContextLabel(
+                            stage === 'manifest'
+                                ? 'Encrypting share manifest'
+                                : `Uploading item ${itemIndex + 1} of ${totalFiles}`
+                        )
+                    }
+                )
+
+                shareKind = 'multi'
+                keyFragment = `#key=${uploadResult.transferKeyHex}`
+                metadataPayload = {
+                    fileId,
+                    shareKind,
+                    fileCount: uploadResult.fileCount,
+                    totalSize: uploadResult.totalSize,
+                    manifestStoragePath: uploadResult.manifestUpload.objectKey,
+                    manifestChunkCount: uploadResult.manifestUpload.totalChunks,
+                    manifestChunkSizes: uploadResult.manifestUpload.chunkSizes || null,
+                    expiresAt: new Date(Date.now()).toISOString(), // placeholder, overwritten below
+                    maxDownloads,
+                    password: normalizedPassword || null
                 }
-            )
+            } else {
+                setUploadStage('encrypting')
+                setUploadStatus('Encrypting locally...')
+
+                const uploadResult = await encryptAndUploadStreaming(
+                    selectedFile,
+                    fileId,
+                    (progress, statusText) => {
+                        setUploadProgress(progress * 0.95)
+                        setUploadStatus(statusText)
+                        setUploadStage(getStageFromStatus(statusText))
+                    }
+                )
+
+                keyFragment = `#key=${uploadResult.keyHex}&iv=${uploadResult.ivHex}`
+                metadataPayload = {
+                    fileId,
+                    originalName: selectedFile.name,
+                    fileType: selectedFile.type,
+                    fileSize: selectedFile.size,
+                    storagePath: uploadResult.objectKey,
+                    storageBackend: 'r2',
+                    chunkCount: uploadResult.totalChunks,
+                    chunkSizes: uploadResult.chunkSizes || null,
+                    expiresAt: new Date(Date.now()).toISOString(), // placeholder, overwritten below
+                    maxDownloads,
+                    password: normalizedPassword || null
+                }
+            }
 
             setUploadStage('saving')
             setUploadStatus('Saving share metadata...')
@@ -184,23 +273,12 @@ export default function HomePage() {
             } else {
                 expiresAt.setDate(expiresAt.getDate() + selectedExpiry.value)
             }
+            metadataPayload.expiresAt = expiresAt.toISOString()
 
             const metadataResponse = await fetch('/api/files/metadata', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    fileId,
-                    originalName: selectedFile.name,
-                    fileType: selectedFile.type,
-                    fileSize: selectedFile.size,
-                    storagePath: uploadResult.objectKey,
-                    storageBackend: 'r2',
-                    chunkCount: uploadResult.totalChunks,
-                    chunkSizes: uploadResult.chunkSizes || null,
-                    expiresAt: expiresAt.toISOString(),
-                    maxDownloads,
-                    password: normalizedPassword || null
-                })
+                body: JSON.stringify(metadataPayload)
             })
 
             if (!metadataResponse.ok) {
@@ -215,9 +293,12 @@ export default function HomePage() {
             setUploadStage('complete')
 
             const baseUrl = window.location.origin
-            const sharePath = metadataResult.shortId ? `/s/${metadataResult.shortId}` : `/share/${fileId}`
-            const url = `${baseUrl}${sharePath}#key=${uploadResult.keyHex}&iv=${uploadResult.ivHex}`
+            sharePath = metadataResult.shortId ? `/s/${metadataResult.shortId}` : `/share/${fileId}`
+            const url = `${baseUrl}${sharePath}${keyFragment}`
             setShareSummary({
+                shareKind,
+                fileCount: selectedEntries.length,
+                totalSize: totalSelectedSize,
                 expiryLabel: selectedExpiry.label,
                 downloadLimitLabel: formatDownloadLimitSummary(maxDownloads),
                 passwordProtected: Boolean(normalizedPassword),
@@ -225,7 +306,7 @@ export default function HomePage() {
             setShareUrl(url)
             trackEvent('upload_completed', {
                 category: 'engagement',
-                label: selectedFile.type || 'unknown',
+                label: isCollection ? 'multi' : (selectedFile.type || 'unknown'),
             })
         } catch (error) {
             console.error('Upload error:', error)
@@ -247,8 +328,6 @@ export default function HomePage() {
             prompt('Copy this link:', shareUrl)
         }
     }
-
-    const fileDescriptor = selectedFile ? `${formatFileSize(selectedFile.size)} - ${fileTypeLabel(selectedFile)}` : ''
 
     return (
         <div className="min-h-screen bg-surface relative overflow-hidden">
@@ -284,7 +363,7 @@ export default function HomePage() {
                 <motion.div
                     layout
                     transition={shellTransition}
-                    className={`w-full ${selectedFile || uploading || shareUrl ? 'max-w-[560px]' : 'max-w-[420px]'}`}
+                    className={`w-full ${selectedEntries.length > 0 || uploading || shareUrl ? 'max-w-[560px]' : 'max-w-[420px]'}`}
                 >
                     {!uploading && !shareUrl && (
                         <motion.div
@@ -293,7 +372,7 @@ export default function HomePage() {
                             className="glass-card card-hover overflow-hidden px-4 py-5 sm:px-6 sm:py-6"
                         >
                             <AnimatePresence initial={false} mode="wait">
-                                {!selectedFile ? (
+                                {selectedEntries.length === 0 ? (
                                     <motion.div
                                         key="dropzone"
                                         initial={prefersReducedMotion ? false : { opacity: 0, y: 12 }}
@@ -302,7 +381,7 @@ export default function HomePage() {
                                         transition={shellTransition}
                                         className="space-y-4"
                                     >
-                                        <DragDropZone onFileSelect={handleFileSelect} selectedFile={selectedFile} />
+                                        <DragDropZone onFileSelect={handleFileSelect} />
                                         <TrustStrip icon="lock" text="Files are encrypted in your browser before upload." />
                                     </motion.div>
                                 ) : (
@@ -326,11 +405,24 @@ export default function HomePage() {
                                                 <div className="min-w-0 flex-1">
                                                     <div className="flex items-start justify-between gap-3">
                                                         <div className="min-w-0">
-                                                            <p className="truncate text-base font-medium text-white">{selectedFile.name}</p>
+                                                            <p className="truncate text-base font-medium text-white">{selectionTitle}</p>
                                                             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-on-surface-variant">
-                                                                <span className="rounded-full border border-outline px-2.5 py-1">{formatFileSize(selectedFile.size)}</span>
-                                                                <span className="rounded-full border border-outline px-2.5 py-1">{fileTypeLabel(selectedFile)}</span>
+                                                                {selectionChips.map((chip) => (
+                                                                    <span key={chip} className="rounded-full border border-outline px-2.5 py-1">{chip}</span>
+                                                                ))}
                                                             </div>
+                                                            {isCollection ? (
+                                                                <div className="mt-3 space-y-1 text-xs text-on-surface-variant">
+                                                                    {selectedEntries.slice(0, 3).map((entry) => (
+                                                                        <p key={entry.relativePath} className="truncate">
+                                                                            {entry.relativePath}
+                                                                        </p>
+                                                                    ))}
+                                                                    {selectedEntries.length > 3 ? (
+                                                                        <p className="text-primary-200">and {selectedEntries.length - 3} more…</p>
+                                                                    ) : null}
+                                                                </div>
+                                                            ) : null}
                                                         </div>
                                                         <button
                                                             type="button"
@@ -443,10 +535,11 @@ export default function HomePage() {
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => setShowPreview(true)}
+                                                                    disabled={isCollection}
                                                                     className="w-full h-10 rounded-full border border-outline text-on-surface-variant text-sm font-medium hover:bg-white/5 transition-colors flex items-center justify-center gap-2"
                                                                 >
                                                                     <span className="material-symbols-outlined text-lg">visibility</span>
-                                                                    Preview before sending
+                                                                    {isCollection ? 'Preview unavailable for collections' : 'Preview before sending'}
                                                                 </button>
                                                             </div>
                                                         </motion.div>
@@ -479,10 +572,11 @@ export default function HomePage() {
                         >
                             <UploadProgress
                                 progress={uploadProgress}
-                                fileName={selectedFile?.name}
-                                fileMeta={fileDescriptor}
+                                fileName={uploadDisplayName || selectionTitle}
+                                fileMeta={uploadDisplayMeta}
                                 status={uploadStatus}
                                 stage={uploadStage}
+                                contextLabel={uploadContextLabel}
                             />
                         </motion.div>
                     )}
@@ -510,12 +604,25 @@ export default function HomePage() {
                             </div>
 
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                <SummaryItem
+                                    label={shareSummary?.shareKind === 'multi' ? 'Collection' : 'File'}
+                                    value={shareSummary?.shareKind === 'multi'
+                                        ? `${formatCollectionCount(shareSummary?.fileCount || 0)} - ${formatFileSize(shareSummary?.totalSize || 0)}`
+                                        : selectedFile?.name || 'Secure file'}
+                                />
                                 <SummaryItem label="Expires" value={shareSummary?.expiryLabel || selectedExpiry.label} />
                                 <SummaryItem label="Downloads" value={shareSummary?.downloadLimitLabel || 'Unlimited'} />
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                 <SummaryItem
                                     label="Password"
                                     value={shareSummary?.passwordProtected ? 'Protected' : 'Not required'}
                                     accent={shareSummary?.passwordProtected ? 'text-primary-200' : 'text-white'}
+                                />
+                                <SummaryItem
+                                    label="Recipient view"
+                                    value={shareSummary?.shareKind === 'multi' ? 'Collection list' : 'Single secure file'}
                                 />
                             </div>
 
@@ -590,7 +697,7 @@ export default function HomePage() {
                 <span>by Basit</span>
             </footer>
 
-            {showPreview && selectedFile ? (
+            {showPreview && selectedFile && !isCollection ? (
                 <FilePreviewModal file={selectedFile} onClose={() => setShowPreview(false)} />
             ) : null}
         </div>

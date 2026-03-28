@@ -9,11 +9,17 @@ import {
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import dotenv from 'dotenv'
+import { COLLECTION_ITEM_ID_REGEX } from '../shared/collectionShare.js'
 
 dotenv.config()
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const OBJECT_KEY_REGEX = /^files\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.enc$/i
+const SINGLE_FILE_OBJECT_KEY_REGEX = /^files\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.enc$/i
+const COLLECTION_MANIFEST_OBJECT_KEY_REGEX = /^shares\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/manifest\.enc$/i
+const COLLECTION_ITEM_OBJECT_KEY_REGEX = new RegExp(
+    `^shares\\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\/items\\/${COLLECTION_ITEM_ID_REGEX.source.replace(/^\\^|\\$$/g, '')}\\.enc$`,
+    'i'
+)
 
 export function validateR2Config(env = process.env) {
     const requiredR2Vars = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']
@@ -46,16 +52,30 @@ function validateObjectKey(objectKey) {
     if (objectKey.includes('..') || objectKey.includes('\0') || objectKey.startsWith('/')) {
         throw new Error('Invalid objectKey: path traversal detected')
     }
-    if (!OBJECT_KEY_REGEX.test(objectKey)) {
-        throw new Error('Invalid objectKey: must match files/{uuid}.enc')
+    if (
+        !SINGLE_FILE_OBJECT_KEY_REGEX.test(objectKey) &&
+        !COLLECTION_MANIFEST_OBJECT_KEY_REGEX.test(objectKey) &&
+        !COLLECTION_ITEM_OBJECT_KEY_REGEX.test(objectKey)
+    ) {
+        throw new Error('Invalid objectKey: unsupported storage path')
     }
 }
 
-export async function getPresignedUploadUrl(fileId) {
-    if (!UUID_REGEX.test(fileId)) {
-        throw new Error('Invalid fileId format')
+function resolveObjectKeyInput(fileIdOrObjectKey) {
+    if (!fileIdOrObjectKey || typeof fileIdOrObjectKey !== 'string') {
+        throw new Error('fileId or objectKey is required')
     }
-    const objectKey = `files/${fileId}.enc`
+
+    if (UUID_REGEX.test(fileIdOrObjectKey)) {
+        return `files/${fileIdOrObjectKey}.enc`
+    }
+
+    validateObjectKey(fileIdOrObjectKey)
+    return fileIdOrObjectKey
+}
+
+export async function getPresignedUploadUrl(fileIdOrObjectKey) {
+    const objectKey = resolveObjectKeyInput(fileIdOrObjectKey)
     const { client, bucketName } = getR2Config()
 
     const command = new PutObjectCommand({
@@ -70,10 +90,7 @@ export async function getPresignedUploadUrl(fileId) {
 }
 
 export async function initiateMultipartUpload(fileId) {
-    if (!UUID_REGEX.test(fileId)) {
-        throw new Error('Invalid fileId format')
-    }
-    const objectKey = `files/${fileId}.enc`
+    const objectKey = resolveObjectKeyInput(fileId)
     const { client, bucketName } = getR2Config()
 
     const command = new CreateMultipartUploadCommand({

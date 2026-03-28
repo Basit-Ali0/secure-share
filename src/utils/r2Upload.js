@@ -31,14 +31,18 @@ export async function uploadToR2(encryptedChunks, authTags, fileId, onProgress =
 /**
  * Simple single-file upload for small files
  */
-export async function simpleUploadToR2(encryptedChunk, authTag, fileId, onProgress) {
+export async function simpleUploadToR2(encryptedChunk, authTag, fileIdOrObjectKey, onProgress) {
     onProgress(0, 'initiating')
 
     // Get presigned URL
     const response = await fetch('/api/r2/simple-upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileId })
+        body: JSON.stringify(
+            typeof fileIdOrObjectKey === 'string' && fileIdOrObjectKey.startsWith('shares/')
+                ? { objectKey: fileIdOrObjectKey }
+                : { fileId: fileIdOrObjectKey }
+        )
     })
 
     if (!response.ok) {
@@ -166,11 +170,15 @@ async function parallelProcess(items, processFn, concurrency) {
 /**
  * Initiate multipart upload (calls server endpoint)
  */
-export async function initiateMultipartUpload(fileId) {
+export async function initiateMultipartUpload(fileIdOrObjectKey) {
     const response = await fetch('/api/r2/initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileId })
+        body: JSON.stringify(
+            typeof fileIdOrObjectKey === 'string' && fileIdOrObjectKey.startsWith('shares/')
+                ? { objectKey: fileIdOrObjectKey }
+                : { fileId: fileIdOrObjectKey }
+        )
     })
 
     if (!response.ok) {

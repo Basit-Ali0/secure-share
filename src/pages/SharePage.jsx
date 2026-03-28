@@ -2,7 +2,12 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { formatFileSize } from '../utils/fileUtils'
-import { downloadAndDecryptStreaming, terminateWorkerPool } from '../utils/streamingEncryption'
+import {
+    deriveCollectionItemMaterial,
+    downloadAndDecryptManifest,
+    downloadAndDecryptStreaming,
+    terminateWorkerPool
+} from '../utils/streamingEncryption'
 import QRCode from '../components/SharePage/QRCode'
 import { OG_IMAGE_URL, SITE_NAME } from '../lib/siteConfig'
 import { trackEvent } from '../lib/analytics'
@@ -37,6 +42,34 @@ function ShareStat({ label, value, accent = 'text-white' }) {
     )
 }
 
+function CollectionListItem({ item, downloading, onDownload }) {
+    const relativePath = item.relativePath && item.relativePath !== item.name ? item.relativePath : null
+
+    return (
+        <div className="rounded-2xl border border-outline-variant bg-surface-container-high px-4 py-3 flex items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-primary-container text-primary-200">
+                <span className="material-symbols-outlined text-[22px]">description</span>
+            </div>
+            <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-white">{item.name}</p>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-on-surface-variant">
+                    <span>{formatFileSize(item.size)}</span>
+                    {item.type ? <span>• {item.type}</span> : null}
+                </div>
+                {relativePath ? <p className="mt-1 truncate text-[11px] text-on-surface-variant">{relativePath}</p> : null}
+            </div>
+            <button
+                type="button"
+                onClick={onDownload}
+                disabled={downloading}
+                className="btn-secondary shrink-0 text-xs px-4 py-2"
+            >
+                {downloading ? 'Downloading…' : 'Download'}
+            </button>
+        </div>
+    )
+}
+
 export default function SharePage() {
     const { fileId, shortId } = useParams()
     const navigate = useNavigate()
@@ -58,6 +91,11 @@ export default function SharePage() {
     const [unlocking, setUnlocking] = useState(false)
     const [unlockError, setUnlockError] = useState('')
     const [isUnlocked, setIsUnlocked] = useState(false)
+    const [collectionManifest, setCollectionManifest] = useState(null)
+    const [collectionSessionToken, setCollectionSessionToken] = useState('')
+    const [collectionLoading, setCollectionLoading] = useState(false)
+    const [collectionDownloadAll, setCollectionDownloadAll] = useState(false)
+    const [activeCollectionItemId, setActiveCollectionItemId] = useState('')
 
     const downloadCount = metadata?.download_count || 0
     const maxDownloads = metadata?.max_downloads ?? null
@@ -66,6 +104,7 @@ export default function SharePage() {
         : Math.max((metadata?.remaining_downloads ?? (maxDownloads - downloadCount)), 0)
     const limitReached = maxDownloads != null && remainingDownloads <= 0
     const requiresPassword = Boolean(metadata?.is_password_protected) && !isUnlocked
+    const isCollection = metadata?.share_kind === 'multi'
 
     useEffect(() => {
         loadFileMetadata()
@@ -115,6 +154,8 @@ export default function SharePage() {
             const data = await response.json()
             setMetadata(data)
             setIsUnlocked(!data.is_password_protected)
+            setCollectionManifest(null)
+            setCollectionSessionToken('')
         } catch (err) {
             setError(err.message)
         } finally {
@@ -149,6 +190,8 @@ export default function SharePage() {
             const data = await response.json()
             setMetadata(data)
             setIsUnlocked(true)
+            setCollectionManifest(null)
+            setCollectionSessionToken('')
         } catch (err) {
             setUnlockError(err.message)
             trackEvent('unlock_failed', {
@@ -160,12 +203,127 @@ export default function SharePage() {
         }
     }
 
+    async function authorizeCollectionShare() {
+        const hash = window.location.hash.substring(1)
+        const params = new URLSearchParams(hash)
+        const transferKeyHex = params.get('key')
+
+        if (!transferKeyHex) {
+            throw new Error('Transfer key missing from URL. Invalid collection link.')
+        }
+
+        const authorizeResponse = await fetch(`/api/files/${identifier}/authorize-download`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: passwordInput })
+        })
+
+        if (!authorizeResponse.ok) {
+            let message = `Request failed with status ${authorizeResponse.status}`
+            try {
+                const data = await authorizeResponse.json()
+                message = data.message || message
+                if (authorizeResponse.status === 410 && data.message === 'Download limit reached') {
+                    setMetadata(prev => prev ? {
+                        ...prev,
+                        download_count: prev.max_downloads ?? prev.download_count ?? 0,
+                        remaining_downloads: 0
+                    } : prev)
+                }
+            } catch {
+                // Ignore non-JSON error payloads
+            }
+            throw new Error(message)
+        }
+
+        const authorization = await authorizeResponse.json()
+        setMetadata(prev => prev ? {
+            ...prev,
+            download_count: authorization.downloadCount,
+            max_downloads: authorization.maxDownloads,
+            remaining_downloads: authorization.remainingDownloads
+        } : prev)
+
+        const manifest = await downloadAndDecryptManifest(
+            authorization.manifestPresignedUrl,
+            authorization.manifestChunkCount || 1,
+            authorization.manifestChunkSizes || null,
+            transferKeyHex,
+            authorization.fileId
+        )
+
+        setCollectionManifest(manifest)
+        setCollectionSessionToken(authorization.sessionToken)
+        trackEvent('download_authorized', {
+            category: 'engagement',
+            label: authorization.maxDownloads == null ? 'multi-unlimited' : 'multi-limited',
+        })
+
+        return { authorization, manifest, transferKeyHex }
+    }
+
+    async function handleCollectionItemDownload(item, sessionToken = collectionSessionToken) {
+        const hash = window.location.hash.substring(1)
+        const params = new URLSearchParams(hash)
+        const transferKeyHex = params.get('key')
+
+        if (!transferKeyHex) {
+            throw new Error('Transfer key missing from URL. Invalid collection link.')
+        }
+
+        setActiveCollectionItemId(item.itemId)
+        const response = await fetch(`/api/files/${identifier}/authorize-item-download`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sessionToken,
+                itemId: item.itemId
+            })
+        })
+
+        if (!response.ok) {
+            let message = `Request failed with status ${response.status}`
+            try {
+                const data = await response.json()
+                message = data.message || message
+            } catch {
+                // Ignore non-JSON payloads
+            }
+            throw new Error(message)
+        }
+
+        const result = await response.json()
+        const itemMaterial = await deriveCollectionItemMaterial(transferKeyHex, metadata.file_id, item.itemId)
+
+        await downloadAndDecryptStreaming(
+            result.presignedUrl,
+            item.chunkCount || 1,
+            item.chunkSizes || null,
+            itemMaterial.keyHex,
+            itemMaterial.ivHex,
+            item.name,
+            (progress, statusText) => {
+                setDownloadProgress(progress)
+                setDownloadStatus(`${statusText} • ${item.name}`)
+            }
+        )
+    }
+
     async function handleDownload() {
         try {
             setDownloading(true)
             setDownloadProgress(0)
-            setDownloadStatus('Authorizing...')
+            setDownloadStatus(isCollection ? 'Revealing collection...' : 'Authorizing...')
             setDownloadComplete(false)
+
+            if (isCollection) {
+                setCollectionLoading(true)
+                await authorizeCollectionShare()
+                setDownloadStatus('Collection ready')
+                setDownloadProgress(100)
+                setDownloadComplete(true)
+                return
+            }
 
             const hash = window.location.hash.substring(1)
             const params = new URLSearchParams(hash)
@@ -248,9 +406,38 @@ export default function SharePage() {
             if (err.message !== 'Download cancelled') {
                 alert(`Download failed: ${err.message}`)
             }
-            setDownloading(false)
             setDownloadProgress(0)
         } finally {
+            setDownloading(false)
+            setCollectionLoading(false)
+            terminateWorkerPool()
+        }
+    }
+
+    async function handleDownloadAll() {
+        if (!collectionManifest?.files?.length || !collectionSessionToken) {
+            return
+        }
+
+        try {
+            setCollectionDownloadAll(true)
+            setDownloading(true)
+            setDownloadStatus('Preparing collection download...')
+
+            for (const item of collectionManifest.files) {
+                await handleCollectionItemDownload(item, collectionSessionToken)
+            }
+
+            setDownloadComplete(true)
+            setDownloadStatus('Collection download complete')
+        } catch (err) {
+            console.error('Collection download error:', err)
+            alert(`Download failed: ${err.message}`)
+        } finally {
+            setCollectionDownloadAll(false)
+            setActiveCollectionItemId('')
+            setDownloading(false)
+            setDownloadProgress(0)
             terminateWorkerPool()
         }
     }
@@ -382,6 +569,156 @@ export default function SharePage() {
 
                         <div className="rounded-2xl border border-outline-variant bg-surface-container-high/70 px-4 py-3 text-xs text-on-surface-variant">
                             File details stay hidden until the correct password unlocks this share.
+                        </div>
+                    </div>
+                </main>
+            </div>
+        )
+    }
+
+    if (isCollection) {
+        return (
+            <div className="min-h-screen bg-surface relative overflow-hidden">
+                <ShareHelmet
+                    title={`Secure Collection | ${SITE_NAME}`}
+                    description="Private encrypted file collection. Search engines should not index this page."
+                    url={sharePageUrl}
+                />
+                <div className="ambient-glow" />
+
+                <header className="relative z-20 flex items-center gap-3 px-4 py-4 md:px-6">
+                    <span className="material-symbols-outlined text-primary text-3xl icon-filled">shield_lock</span>
+                    <span className="text-xl font-normal tracking-tight text-white">MaskedFile</span>
+                </header>
+
+                <main className="relative z-10 flex flex-col items-center justify-center px-4 py-8 md:py-16">
+                    <div className="w-full max-w-[520px] glass-card p-6 flex flex-col gap-6 card-hover">
+                        <div className="relative flex justify-center pt-2">
+                            <div className="w-16 h-16 rounded-2xl bg-primary-container flex items-center justify-center text-primary-200 shadow-inner border border-outline/20">
+                                <span className="material-symbols-outlined text-[32px]">folder_zip</span>
+                            </div>
+                            <div className="absolute -bottom-3 bg-primary-900 text-primary-200 text-[11px] font-medium px-3 py-1 rounded-full shadow-sm flex items-center gap-1.5 border border-primary/20">
+                                <span className="material-symbols-outlined text-[14px] icon-filled">lock</span>
+                                Encrypted collection
+                            </div>
+                        </div>
+
+                        <div className="text-center space-y-2 pt-2">
+                            <h1 className="text-[22px] leading-7 font-normal text-white break-words">
+                                {metadata.file_count} secure file{metadata.file_count === 1 ? '' : 's'}
+                            </h1>
+                            <div className="flex items-center justify-center gap-2 text-sm text-on-surface-variant">
+                                <span className="rounded-full border border-outline px-3 py-1">{formatFileSize(metadata.total_size || 0)}</span>
+                                <span className="rounded-full border border-outline px-3 py-1">Collection</span>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 divide-x divide-outline-variant rounded-[24px] border border-outline-variant bg-surface-container-high">
+                            <ShareStat label="Files" value={metadata.file_count} />
+                            <ShareStat
+                                label="Views left"
+                                value={maxDownloads == null ? 'Unlimited' : `${remainingDownloads} / ${maxDownloads}`}
+                                accent={limitReached ? 'text-red-400' : 'text-primary-200'}
+                            />
+                            <ShareStat
+                                label="Expires in"
+                                value={timeLeft !== null ? formatTimeLeft(timeLeft) : 'Unknown'}
+                                accent={timeLeft !== null && timeLeft <= 0 ? 'text-red-400' : timeLeft !== null && timeLeft < 3600000 ? 'text-amber-400' : 'text-amber-300'}
+                            />
+                        </div>
+
+                        <div className="rounded-2xl border border-outline-variant bg-surface-container-high/70 px-4 py-3 text-sm text-on-surface-variant flex items-center gap-2">
+                            <span className="material-symbols-outlined text-primary">key</span>
+                            <span>Transfer key embedded in URL</span>
+                            <span className="text-on-surface-variant/60">-</span>
+                            <span>Manifest decrypts only in your browser</span>
+                            <span className="material-symbols-outlined text-primary ml-auto">check_circle</span>
+                        </div>
+
+                        {!collectionManifest ? (
+                            <>
+                                <button
+                                    onClick={!limitReached ? handleDownload : undefined}
+                                    disabled={downloading || limitReached}
+                                    className={`w-full h-12 rounded-full flex items-center justify-center gap-2 transition-all duration-300 font-medium tracking-wide text-[14px] border border-white/5 ${limitReached
+                                        ? 'bg-red-900/40 text-red-300 cursor-not-allowed'
+                                        : 'bg-primary hover:bg-primary-400 hover:shadow-purple-glow-button active:scale-[0.98] text-black'
+                                        }`}
+                                >
+                                    {collectionLoading ? (
+                                        <>
+                                            <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                                            {downloadStatus || 'Revealing collection...'}
+                                        </>
+                                    ) : limitReached ? (
+                                        <>
+                                            <span className="material-symbols-outlined text-[20px]">block</span>
+                                            Download Limit Reached
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="material-symbols-outlined text-[20px]">folder_open</span>
+                                            Reveal Files
+                                        </>
+                                    )}
+                                </button>
+
+                                {downloading && (
+                                    <div className="w-full h-1 bg-surface-variant rounded-full overflow-hidden">
+                                        <div className="progress-bar transition-all duration-300" style={{ width: `${downloadProgress}%` }} />
+                                    </div>
+                                )}
+                            </>
+                        ) : (
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                        <p className="text-sm font-medium text-white">Collection contents</p>
+                                        <p className="text-xs text-on-surface-variant">
+                                            Download individual files or take the full set sequentially.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={handleDownloadAll}
+                                        disabled={collectionDownloadAll}
+                                        className="btn-primary shrink-0"
+                                    >
+                                        {collectionDownloadAll ? 'Downloading…' : 'Download all'}
+                                    </button>
+                                </div>
+
+                                <div className="space-y-3">
+                                    {collectionManifest.files.map((item) => (
+                                        <CollectionListItem
+                                            key={item.itemId}
+                                            item={item}
+                                            downloading={activeCollectionItemId === item.itemId}
+                                            onDownload={async () => {
+                                                try {
+                                                    setDownloading(true)
+                                                    await handleCollectionItemDownload(item)
+                                                    setDownloadComplete(true)
+                                                } catch (err) {
+                                                    console.error('Item download error:', err)
+                                                    alert(`Download failed: ${err.message}`)
+                                                } finally {
+                                                    setDownloading(false)
+                                                    setDownloadProgress(0)
+                                                    setActiveCollectionItemId('')
+                                                    terminateWorkerPool()
+                                                }
+                                            }}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="rounded-2xl border border-outline-variant bg-surface-container-high/70 px-4 py-3 text-center">
+                            <p className="text-[12px] leading-5 text-on-surface-variant">
+                                File names stay private until the encrypted manifest is revealed with the transfer key in your URL.
+                            </p>
                         </div>
                     </div>
                 </main>

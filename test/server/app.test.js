@@ -3,6 +3,7 @@ import request from 'supertest'
 import crypto from 'crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { createApp } from '../../server/app.js'
+import { buildCollectionItemObjectKey, buildCollectionManifestObjectKey } from '../../shared/collectionShare.js'
 
 function createSupabaseMock({
     existingShortIds = new Set(),
@@ -180,6 +181,43 @@ describe('server app routes', () => {
         expect(response.body.short_id).toBe(file.short_id)
     })
 
+    it('returns collection summary metadata for multi-file shares', async () => {
+        const file = {
+            file_id: '123e4567-e89b-12d3-a456-426614174000',
+            short_id: 'Pack1234',
+            share_kind: 'multi',
+            file_count: 3,
+            total_size: 4096,
+            manifest_storage_path: buildCollectionManifestObjectKey('123e4567-e89b-12d3-a456-426614174000'),
+            manifest_chunk_count: 1,
+            manifest_chunk_sizes: null,
+            expires_at: '2099-01-01T00:00:00.000Z',
+            created_at: '2026-01-01T00:00:00.000Z',
+            download_count: 0,
+            max_downloads: null,
+            password_hash: null,
+        }
+        const supabase = createSupabaseMock({
+            filesById: { [file.file_id]: file },
+            filesByShortId: { [file.short_id]: file },
+        })
+
+        const app = createApp({
+            env: {
+                VITE_SUPABASE_URL: 'https://example.supabase.co',
+                SUPABASE_SERVICE_KEY: 'service-role-key',
+            },
+            supabase,
+        })
+
+        const response = await request(app).get(`/api/files/${file.short_id}`)
+        expect(response.status).toBe(200)
+        expect(response.body.share_kind).toBe('multi')
+        expect(response.body.file_count).toBe(3)
+        expect(response.body.total_size).toBe(4096)
+        expect(response.body.original_name).toBeUndefined()
+    })
+
     it('returns minimal metadata for password-protected files', async () => {
         const file = {
             file_id: '123e4567-e89b-12d3-a456-426614174000',
@@ -299,6 +337,95 @@ describe('server app routes', () => {
         expect(success.body.presignedUrl).toBe('https://download.example/file')
         expect(success.body.remainingDownloads).toBe(1)
         expect(getPresignedDownloadUrl).toHaveBeenCalledWith(file.storage_path)
+    })
+
+    it('authorizes multi-file downloads by returning a manifest URL and session token', async () => {
+        const file = {
+            file_id: '123e4567-e89b-12d3-a456-426614174000',
+            short_id: 'Pack1234',
+            share_kind: 'multi',
+            file_count: 2,
+            total_size: 4096,
+            manifest_storage_path: buildCollectionManifestObjectKey('123e4567-e89b-12d3-a456-426614174000'),
+            manifest_chunk_count: 1,
+            manifest_chunk_sizes: null,
+            storage_backend: 'r2',
+            expires_at: '2099-01-01T00:00:00.000Z',
+            download_count: 0,
+            max_downloads: 2,
+            password_hash: null,
+        }
+        const supabase = createSupabaseMock({
+            filesById: { [file.file_id]: file },
+            filesByShortId: { [file.short_id]: file },
+            authorizeDownloadResult: [{ download_count: 1, max_downloads: 2, exhausted: false }],
+        })
+        const getPresignedDownloadUrl = vi.fn(async () => ({ presignedUrl: 'https://download.example/manifest' }))
+
+        const app = createApp({
+            env: {
+                VITE_SUPABASE_URL: 'https://example.supabase.co',
+                SUPABASE_SERVICE_KEY: 'service-role-key',
+                DOWNLOAD_SESSION_SECRET: 'session-secret',
+            },
+            supabase,
+            getPresignedDownloadUrl,
+        })
+
+        const response = await request(app).post(`/api/files/${file.short_id}/authorize-download`)
+        expect(response.status).toBe(200)
+        expect(response.body.shareKind).toBe('multi')
+        expect(response.body.manifestPresignedUrl).toBe('https://download.example/manifest')
+        expect(response.body.sessionToken).toEqual(expect.any(String))
+        expect(getPresignedDownloadUrl).toHaveBeenCalledWith(file.manifest_storage_path)
+    })
+
+    it('authorizes individual collection items when the session token is valid', async () => {
+        const file = {
+            file_id: '123e4567-e89b-12d3-a456-426614174000',
+            short_id: 'Pack1234',
+            share_kind: 'multi',
+            file_count: 2,
+            total_size: 4096,
+            manifest_storage_path: buildCollectionManifestObjectKey('123e4567-e89b-12d3-a456-426614174000'),
+            storage_backend: 'r2',
+            expires_at: '2099-01-01T00:00:00.000Z',
+            download_count: 0,
+            max_downloads: null,
+            password_hash: null,
+        }
+        const supabase = createSupabaseMock({
+            filesById: { [file.file_id]: file },
+            filesByShortId: { [file.short_id]: file },
+            authorizeDownloadResult: [{ download_count: 1, max_downloads: null, exhausted: false }],
+        })
+        const getPresignedDownloadUrl = vi.fn(async () => ({ presignedUrl: 'https://download.example/item' }))
+
+        const app = createApp({
+            env: {
+                VITE_SUPABASE_URL: 'https://example.supabase.co',
+                SUPABASE_SERVICE_KEY: 'service-role-key',
+                DOWNLOAD_SESSION_SECRET: 'session-secret',
+            },
+            supabase,
+            getPresignedDownloadUrl,
+        })
+
+        const authorizeShare = await request(app).post(`/api/files/${file.short_id}/authorize-download`)
+        expect(authorizeShare.status).toBe(200)
+
+        const authorizeItem = await request(app)
+            .post(`/api/files/${file.short_id}/authorize-item-download`)
+            .send({
+                sessionToken: authorizeShare.body.sessionToken,
+                itemId: 'item-000001'
+            })
+
+        expect(authorizeItem.status).toBe(200)
+        expect(authorizeItem.body.presignedUrl).toBe('https://download.example/item')
+        expect(getPresignedDownloadUrl).toHaveBeenCalledWith(
+            buildCollectionItemObjectKey(file.file_id, 'item-000001')
+        )
     })
 
     it('blocks downloads once max_downloads is exhausted', async () => {

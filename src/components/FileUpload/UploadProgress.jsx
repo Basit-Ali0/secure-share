@@ -10,7 +10,7 @@ function getStageIndex(stage) {
     return index === -1 ? 0 : index
 }
 
-export default function UploadProgress({ progress, fileName, fileMeta, status, stage }) {
+export default function UploadProgress({ progress, fileName, fileMeta, status, stage, contextLabel }) {
     const activeIndex = getStageIndex(stage)
 
     return (
@@ -26,6 +26,7 @@ export default function UploadProgress({ progress, fileName, fileMeta, status, s
                             <span className="text-xs font-medium text-primary">{Math.round(progress)}%</span>
                         </div>
                         {fileMeta ? <p className="mt-1 text-xs text-on-surface-variant">{fileMeta}</p> : null}
+                        {contextLabel ? <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-on-surface-variant">{contextLabel}</p> : null}
                         <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface-variant">
                             <div className="progress-bar transition-all duration-300" style={{ width: `${progress}%` }} />
                         </div>

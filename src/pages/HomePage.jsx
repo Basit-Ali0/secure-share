@@ -208,20 +208,21 @@ export default function HomePage() {
                 const uploadResult = await encryptAndUploadCollection(
                     selectedEntries,
                     fileId,
-                    ({ progress, statusText, itemIndex, totalFiles, currentFileName, stage }) => {
+                    ({ progress, statusText, completedFilesCount, activeFilesCount, totalFiles, currentFileName, stage }) => {
                         setUploadProgress(progress * 0.95)
                         setUploadStatus(statusText)
                         setUploadStage(stage === 'manifest' ? 'saving' : getStageFromStatus(statusText))
-                        setUploadDisplayName(currentFileName || selectionTitle)
-                        setUploadDisplayMeta(currentFileName === 'Share manifest'
-                            ? `${formatCollectionCount(selectedEntries.length)} - ${formatFileSize(totalSelectedSize)}`
-                            : `File ${itemIndex + 1} of ${totalFiles}`
-                        )
-                        setUploadContextLabel(
-                            stage === 'manifest'
-                                ? 'Encrypting share manifest'
-                                : `Uploading item ${itemIndex + 1} of ${totalFiles}`
-                        )
+                        setUploadDisplayName(stage === 'manifest' ? 'Share manifest' : selectionTitle)
+                        
+                        if (stage === 'manifest') {
+                            setUploadDisplayMeta(`${formatCollectionCount(selectedEntries.length)} - ${formatFileSize(totalSelectedSize)}`)
+                            setUploadContextLabel('Encrypting share manifest')
+                        } else {
+                            setUploadDisplayMeta(formatFileSize(totalSelectedSize))
+                            setUploadContextLabel(
+                                `${completedFilesCount || 0} of ${totalFiles} completed (${activeFilesCount || 0} active)`
+                            )
+                        }
                     }
                 )
 

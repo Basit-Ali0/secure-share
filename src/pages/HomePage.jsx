@@ -549,11 +549,10 @@ export default function HomePage() {
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => setShowPreview(true)}
-                                                                    disabled={isCollection}
                                                                     className="w-full h-10 rounded-full border border-outline text-on-surface-variant text-sm font-medium hover:bg-white/5 transition-colors flex items-center justify-center gap-2"
                                                                 >
                                                                     <span className="material-symbols-outlined text-lg">visibility</span>
-                                                                    {isCollection ? 'Preview unavailable for collections' : 'Preview before sending'}
+                                                                    {isCollection ? 'Preview collection contents' : 'Preview before sending'}
                                                                 </button>
                                                             </div>
                                                         </motion.div>
@@ -711,9 +710,14 @@ export default function HomePage() {
                 <span>by Basit</span>
             </footer>
 
-            {showPreview && selectedFile && !isCollection ? (
-                <FilePreviewModal file={selectedFile} onClose={() => setShowPreview(false)} />
+            {showPreview && (selectedFile || (isCollection && selectedFiles.length > 0)) ? (
+                <FilePreviewModal
+                    file={selectedFile}
+                    files={isCollection ? selectedFiles : null}
+                    onClose={() => setShowPreview(false)}
+                />
             ) : null}
         </div>
+
     )
 }

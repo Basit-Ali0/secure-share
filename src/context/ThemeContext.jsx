@@ -2,11 +2,25 @@ import { createContext, useContext, useEffect, useState } from 'react'
 
 const ThemeContext = createContext()
 
+function readStoredTheme() {
+    try {
+        const stored = localStorage.getItem('theme')
+        if (stored === 'light' || stored === 'dark') return stored
+    } catch {
+        /* ignore */
+    }
+    if (
+        typeof window !== 'undefined'
+        && typeof window.matchMedia === 'function'
+        && window.matchMedia('(prefers-color-scheme: dark)').matches
+    ) {
+        return 'dark'
+    }
+    return 'light'
+}
+
 export function ThemeProvider({ children }) {
-    const [theme, setTheme] = useState(() => {
-        // Get from localStorage or default to light
-        return localStorage.getItem('theme') || 'light'
-    })
+    const [theme, setTheme] = useState(() => readStoredTheme())
 
     useEffect(() => {
         // Apply theme to document

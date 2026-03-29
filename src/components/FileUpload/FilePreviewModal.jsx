@@ -43,36 +43,33 @@ export default function FilePreviewModal({ file, onClose }) {
 
     return (
         <div
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-mf-ink/80 p-4 backdrop-blur-sm"
             onClick={onClose}
             role="dialog"
             aria-modal="true"
             aria-label="File preview"
         >
             <div
-                className="bg-surface-container border border-outline-variant rounded-m3 max-w-4xl w-full max-h-[90vh] overflow-auto shadow-purple-glow-lg"
+                className="max-h-[90vh] w-full max-w-4xl overflow-auto border border-mf-border bg-mf-card"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="p-6">
-                    {/* Header */}
-                    <div className="flex items-start justify-between mb-4">
-                        <h3 className="text-xl font-medium text-white">Preview</h3>
+                    <div className="mb-4 flex items-start justify-between">
+                        <h3 className="text-xl font-bold text-mf-ink">Preview</h3>
                         <button
                             onClick={onClose}
-                            className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 text-on-surface-variant transition-colors"
+                            className="flex h-10 w-10 items-center justify-center rounded-full text-mf-ink-muted transition-colors hover:bg-mf-bg-panel"
                             aria-label="Close preview"
                         >
                             <span className="material-symbols-outlined">close</span>
                         </button>
                     </div>
 
-                    {/* File Name */}
                     <div className="mb-4">
-                        <p className="text-sm text-on-surface-variant truncate">{file.name}</p>
+                        <p className="truncate font-mono text-sm text-mf-ink-muted">{file.name}</p>
                     </div>
 
-                    {/* Preview Area */}
-                    <div className="bg-surface-container-high rounded-xl p-4 flex items-center justify-center min-h-[400px] border border-outline-variant">
+                    <div className="flex min-h-[400px] items-center justify-center rounded-xl border border-mf-border bg-mf-bg-panel p-4">
                         {fileType === 'image' && (
                             <img
                                 src={previewUrl}
@@ -101,14 +98,14 @@ export default function FilePreviewModal({ file, onClose }) {
 
                         {fileType === 'audio' && (
                             <div className="flex flex-col items-center gap-4">
-                                <span className="material-symbols-outlined text-6xl text-on-surface-variant">volume_up</span>
+                                <span className="material-symbols-outlined text-6xl text-mf-ink-muted">volume_up</span>
                                 <audio src={previewUrl} controls className="w-full max-w-md" />
                             </div>
                         )}
 
                         {fileType === 'unsupported' && (
-                            <div className="text-center text-on-surface-variant">
-                                <span className="material-symbols-outlined text-6xl mb-3">description</span>
+                            <div className="text-center text-mf-ink-muted">
+                                <span className="material-symbols-outlined mb-3 text-6xl">description</span>
                                 <p>Preview not available for this file type</p>
                             </div>
                         )}

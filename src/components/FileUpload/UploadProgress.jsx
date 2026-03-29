@@ -14,21 +14,23 @@ export default function UploadProgress({ progress, fileName, fileMeta, status, s
     const activeIndex = getStageIndex(stage)
 
     return (
-        <div className="flex flex-col gap-5">
-            <div className="rounded-[28px] border border-outline-variant bg-surface-container-high px-4 py-4">
+        <div className="flex flex-col gap-5 px-5 py-6 sm:px-6">
+            <div className="border border-mf-border bg-mf-bg-panel px-4 py-4">
                 <div className="flex items-start gap-3">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] bg-primary-container text-primary-200">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center bg-mf-accent/15 text-mf-accent">
                         <span className="material-symbols-outlined text-[24px] icon-filled">description</span>
                     </div>
                     <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-3">
-                            <p className="truncate text-base font-medium text-white">{fileName}</p>
-                            <span className="text-xs font-medium text-primary">{Math.round(progress)}%</span>
+                            <p className="truncate text-base font-bold text-mf-ink">{fileName}</p>
+                            <span className="font-mono text-xs font-medium text-mf-accent">{Math.round(progress)}%</span>
                         </div>
-                        {fileMeta ? <p className="mt-1 text-xs text-on-surface-variant">{fileMeta}</p> : null}
-                        {contextLabel ? <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-on-surface-variant">{contextLabel}</p> : null}
-                        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface-variant">
-                            <div className="progress-bar transition-all duration-300" style={{ width: `${progress}%` }} />
+                        {fileMeta ? <p className="mt-1 font-mono text-xs text-mf-ink-muted">{fileMeta}</p> : null}
+                        {contextLabel ? (
+                            <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-mf-ink-muted">{contextLabel}</p>
+                        ) : null}
+                        <div className="mt-3 h-0.5 w-full bg-mf-border">
+                            <div className="mf-progress-fill" style={{ width: `${progress}%` }} />
                         </div>
                     </div>
                 </div>
@@ -42,21 +44,19 @@ export default function UploadProgress({ progress, fileName, fileMeta, status, s
                     return (
                         <div
                             key={item.key}
-                            className={`rounded-2xl border px-4 py-3 transition-colors ${
-                                completed || active
-                                    ? 'border-primary/40 bg-primary-container/20'
-                                    : 'border-outline-variant bg-surface-container-high/70'
+                            className={`border px-4 py-3 transition-colors ${
+                                completed || active ? 'border-mf-accent/40 bg-mf-accent/10' : 'border-mf-border bg-mf-bg-panel'
                             }`}
                         >
                             <div className="flex items-center gap-2">
-                                <span className={`material-symbols-outlined text-[18px] ${
-                                    completed ? 'text-primary icon-filled' : active ? 'text-primary' : 'text-on-surface-variant'
-                                }`}>
+                                <span
+                                    className={`material-symbols-outlined text-[18px] ${
+                                        completed ? 'text-mf-accent icon-filled' : active ? 'text-mf-accent' : 'text-mf-ink-muted'
+                                    }`}
+                                >
                                     {completed ? 'check_circle' : active ? 'progress_activity' : 'radio_button_unchecked'}
                                 </span>
-                                <span className={`text-sm ${completed || active ? 'text-white' : 'text-on-surface-variant'}`}>
-                                    {item.label}
-                                </span>
+                                <span className={`text-sm ${completed || active ? 'text-mf-ink' : 'text-mf-ink-muted'}`}>{item.label}</span>
                             </div>
                         </div>
                     )
@@ -64,8 +64,8 @@ export default function UploadProgress({ progress, fileName, fileMeta, status, s
             </div>
 
             <div className="space-y-3 text-center">
-                <p className="text-sm text-on-surface-variant">{status}</p>
-                <div className="rounded-2xl border border-outline-variant bg-surface-container-high/70 px-4 py-3 text-xs text-on-surface-variant">
+                <p className="text-sm text-mf-ink-muted">{status}</p>
+                <div className="border border-mf-border bg-mf-bg-panel px-4 py-3 font-mono text-xs text-mf-ink-muted">
                     Your file is encrypted in your browser first, then uploaded as ciphertext only.
                 </div>
             </div>

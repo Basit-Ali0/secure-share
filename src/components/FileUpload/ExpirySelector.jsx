@@ -1,36 +1,29 @@
 const EXPIRY_OPTIONS = [
-    { label: '1 Hour', value: 1, unit: 'hours' },
-    { label: '24 Hours', value: 24, unit: 'hours' },
-    { label: '7 Days', value: 7, unit: 'days' },
+    { label: '1 Hour', shortLabel: '1H', value: 1, unit: 'hours' },
+    { label: '24 Hours', shortLabel: '24H', value: 24, unit: 'hours' },
+    { label: '7 Days', shortLabel: '7D', value: 7, unit: 'days' },
 ]
 
 export default function ExpirySelector({ selected, onChange }) {
     return (
-        <div className="flex flex-col gap-2.5">
-            <span className="text-sm text-on-surface-variant font-medium">Expiration</span>
-            <div className="flex w-full rounded-full border border-outline overflow-hidden h-10">
-                {EXPIRY_OPTIONS.map((option, index) => (
+        <div className="flex flex-wrap gap-1">
+            {EXPIRY_OPTIONS.map((option) => {
+                const isOn = selected?.value === option.value && selected?.unit === option.unit
+                return (
                     <button
                         key={`${option.unit}-${option.value}`}
+                        type="button"
                         onClick={() => onChange(option)}
-                        className={`
-                            flex-1 text-sm font-medium transition-colors relative
-                            ${index < EXPIRY_OPTIONS.length - 1 ? 'border-r border-outline' : ''}
-                            ${selected?.value === option.value && selected?.unit === option.unit
-                                ? 'bg-primary-700 text-primary-100 hover:bg-primary-600'
-                                : 'hover:bg-white/5 text-on-surface-variant'
-                            }
-                        `}
+                        className={`border px-2.5 py-1.5 font-mono text-[10px] tracking-wide transition-colors ${
+                            isOn
+                                ? 'border-mf-ink bg-mf-ink text-mf-bg'
+                                : 'border-mf-border bg-transparent text-mf-ink-muted hover:border-mf-ink hover:text-mf-ink'
+                        }`}
                     >
-                        {selected?.value === option.value && selected?.unit === option.unit && (
-                            <span className="material-symbols-outlined text-[16px] absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 icon-filled">
-                                check
-                            </span>
-                        )}
-                        {option.label}
+                        {option.shortLabel}
                     </button>
-                ))}
-            </div>
+                )
+            })}
         </div>
     )
 }

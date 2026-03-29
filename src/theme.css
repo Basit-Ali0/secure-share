@@ -1,0 +1,28 @@
+/* MaskedFile design tokens — light (default) and dark (.dark on html) */
+:root {
+  --mf-bg: 245 243 238;
+  --mf-bg-panel: 238 234 225;
+  --mf-card: 255 255 255;
+  --mf-ink: 10 9 9;
+  --mf-ink-muted: 107 104 96;
+  --mf-border: 216 212 203;
+  --mf-accent: 27 44 193;
+  --mf-accent-soft: 27 44 193;
+  --mf-success: 26 127 75;
+  --mf-warn: 180 83 9;
+  --mf-danger: 153 27 27;
+}
+
+html.dark {
+  --mf-bg: 14 14 13;
+  --mf-bg-panel: 22 22 20;
+  --mf-card: 24 24 22;
+  --mf-ink: 245 243 238;
+  --mf-ink-muted: 154 150 140;
+  --mf-border: 55 54 50;
+  --mf-accent: 99 122 255;
+  --mf-accent-soft: 99 122 255;
+  --mf-success: 74 222 128;
+  --mf-warn: 251 191 36;
+  --mf-danger: 248 113 113;
+}

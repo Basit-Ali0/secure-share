@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { HelmetProvider } from 'react-helmet-async'
+import { MemoryRouter } from 'react-router-dom'
 import { vi } from 'vitest'
 import HomePage from '../../src/pages/HomePage.jsx'
+import { ThemeProvider } from '../../src/context/ThemeContext.jsx'
 import { encryptAndUploadCollection, encryptAndUploadStreaming } from '../../src/utils/streamingEncryption'
 import { buildCanonicalUrl, DEFAULT_TITLE, SITE_NAME } from '../../src/lib/siteConfig.js'
 
@@ -60,7 +62,11 @@ describe('HomePage', () => {
     function renderHomePage() {
         return render(
             <HelmetProvider>
-                <HomePage />
+                <ThemeProvider>
+                    <MemoryRouter>
+                        <HomePage />
+                    </MemoryRouter>
+                </ThemeProvider>
             </HelmetProvider>
         )
     }

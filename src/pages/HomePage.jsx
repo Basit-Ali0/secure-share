@@ -6,6 +6,9 @@ import UploadProgress from '../components/FileUpload/UploadProgress'
 import ExpirySelector, { EXPIRY_OPTIONS } from '../components/FileUpload/ExpirySelector'
 import FilePreviewModal from '../components/FileUpload/FilePreviewModal'
 import QRCode from '../components/SharePage/QRCode'
+import MfNav from '../components/layout/MfNav'
+import MfFooter from '../components/layout/MfFooter'
+import MfCornerCard from '../components/layout/MfCornerCard'
 import {
     encryptAndUploadCollection,
     encryptAndUploadStreaming,
@@ -20,10 +23,10 @@ function SurfaceLabel({ icon, title, description, trailing }) {
     return (
         <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
-                <span className="material-symbols-outlined text-primary text-[18px]">{icon}</span>
+                <span className="material-symbols-outlined text-[18px] text-mf-accent">{icon}</span>
                 <div>
-                    <p className="text-sm font-medium text-white">{title}</p>
-                    {description ? <p className="text-xs text-on-surface-variant">{description}</p> : null}
+                    <p className="text-sm font-bold text-mf-ink">{title}</p>
+                    {description ? <p className="text-xs text-mf-ink-muted">{description}</p> : null}
                 </div>
             </div>
             {trailing}
@@ -31,19 +34,19 @@ function SurfaceLabel({ icon, title, description, trailing }) {
     )
 }
 
-function SummaryItem({ label, value, accent = 'text-white' }) {
+function SummaryItem({ label, value, accent = 'text-mf-ink' }) {
     return (
-        <div className="rounded-2xl border border-outline-variant bg-surface-container-high px-4 py-3 text-left">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-on-surface-variant">{label}</p>
-            <p className={`mt-2 text-sm font-medium ${accent}`}>{value}</p>
+        <div className="border border-mf-border bg-mf-bg-panel px-4 py-3 text-left">
+            <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-mf-ink-muted">{label}</p>
+            <p className={`mt-2 text-sm font-semibold ${accent}`}>{value}</p>
         </div>
     )
 }
 
-function TrustStrip({ icon, text, accent = 'text-primary' }) {
+function TrustStrip({ icon, text }) {
     return (
-        <div className="flex items-center justify-center gap-2 rounded-2xl border border-outline-variant bg-surface-container-high/70 px-4 py-3 text-xs text-on-surface-variant">
-            <span className={`material-symbols-outlined text-[16px] ${accent}`}>{icon}</span>
+        <div className="flex items-center justify-center gap-2 border border-mf-border bg-mf-bg px-4 py-3 font-mono text-xs text-mf-ink-muted">
+            <span className="material-symbols-outlined text-[16px] text-mf-accent">{icon}</span>
             <span>{text}</span>
         </div>
     )
@@ -81,6 +84,42 @@ function flattenSelection(entries) {
 
 function formatCollectionCount(count) {
     return `${count} file${count === 1 ? '' : 's'}`
+}
+
+function HowItWorks() {
+    return (
+        <section className="mf-fade-up mt-16" style={{ animationDelay: '0.15s' }}>
+            <div className="mb-9 flex items-center gap-3.5 font-mono text-[10.5px] uppercase tracking-[0.14em] text-mf-ink-muted">
+                <span>How it works</span>
+                <span className="h-px flex-1 bg-mf-border" />
+            </div>
+            <div className="grid grid-cols-1 gap-px bg-mf-border md:grid-cols-3">
+                {[
+                    {
+                        n: '01',
+                        t: 'Select & Configure',
+                        d: 'Drop your file and set expiry rules, password protection, and download limits — all before anything leaves your device.',
+                    },
+                    {
+                        n: '02',
+                        t: 'Client-Side Encrypt',
+                        d: 'AES-256 encryption runs entirely in your browser. The decryption key never leaves your machine — we only receive ciphertext.',
+                    },
+                    {
+                        n: '03',
+                        t: 'Share the Link',
+                        d: 'Send the generated link to your recipient. The key travels in the URL fragment — structurally invisible to servers and logs.',
+                    },
+                ].map((step) => (
+                    <div key={step.n} className="bg-mf-bg px-6 py-7 md:py-9">
+                        <div className="mb-3.5 text-[42px] font-extrabold leading-none tracking-tight text-mf-border">{step.n}</div>
+                        <h3 className="mb-2 text-sm font-bold tracking-tight text-mf-ink">{step.t}</h3>
+                        <p className="font-mono text-[10.5px] leading-relaxed tracking-wide text-mf-ink-muted">{step.d}</p>
+                    </div>
+                ))}
+            </div>
+        </section>
+    )
 }
 
 export default function HomePage() {
@@ -243,7 +282,7 @@ export default function HomePage() {
                     manifestStoragePath: uploadResult.manifestUpload.objectKey,
                     manifestChunkCount: uploadResult.manifestUpload.totalChunks,
                     manifestChunkSizes: uploadResult.manifestUpload.chunkSizes || null,
-                    expiresAt: new Date().toISOString(), // placeholder, overwritten below
+                    expiresAt: new Date().toISOString(),
                     maxDownloads,
                     password: normalizedPassword || null
                 }
@@ -275,7 +314,7 @@ export default function HomePage() {
                     storageBackend: 'r2',
                     chunkCount: uploadResult.totalChunks,
                     chunkSizes: uploadResult.chunkSizes || null,
-                    expiresAt: new Date().toISOString(), // placeholder, overwritten below
+                    expiresAt: new Date().toISOString(),
                     maxDownloads,
                     password: normalizedPassword || null
                 }
@@ -348,8 +387,10 @@ export default function HomePage() {
         }
     }
 
+    const wideCard = selectedEntries.length > 0 || uploading || shareUrl
+
     return (
-        <div className="min-h-screen bg-surface relative overflow-hidden">
+        <div className="min-h-screen bg-mf-bg text-mf-ink">
             <Helmet>
                 <title>{DEFAULT_TITLE}</title>
                 <meta name="description" content={DEFAULT_DESCRIPTION} />
@@ -366,30 +407,44 @@ export default function HomePage() {
                 <meta name="twitter:image" content={OG_IMAGE_URL} />
             </Helmet>
 
-            <div className="ambient-glow" />
+            <MfNav />
 
-            <header className="relative z-20 flex items-center gap-3 px-4 py-4 md:px-6">
-                <span className="material-symbols-outlined text-primary text-3xl icon-filled">shield_lock</span>
-                <span className="text-xl font-normal tracking-tight text-white">MaskedFile</span>
-            </header>
-
-            <main className="relative z-10 flex flex-col items-center justify-center px-4 pt-2 md:pt-4 pb-8">
-                <div className="text-center mb-6 md:mb-8">
-                    <h1 className="text-2xl sm:text-3xl font-normal text-white mb-1">Masked Transfer</h1>
-                    <p className="text-on-surface-variant text-sm">Client-side encrypted. Zero-knowledge.</p>
+            <main className={`mx-auto px-4 pb-12 pt-10 md:px-8 ${wideCard ? 'max-w-2xl' : 'max-w-[680px]'}`}>
+                <div className="mf-fade-up mb-10 text-center md:mb-14">
+                    <div className="mb-5 inline-flex items-center gap-2.5 font-mono text-[10.5px] uppercase tracking-[0.14em] text-mf-ink-muted">
+                        <span className="h-px w-[22px] bg-mf-accent" />
+                        Secure File Transfer
+                        <span className="h-px w-[22px] bg-mf-accent" />
+                    </div>
+                    <h1 className="mb-4 text-[clamp(2.5rem,7vw,4.5rem)] font-extrabold leading-[1.02] tracking-tight">
+                        Masked
+                        <br />
+                        <span className="text-mf-accent">Transfer.</span>
+                    </h1>
+                    <p className="mx-auto mb-7 max-w-md font-mono text-xs leading-relaxed tracking-wide text-mf-ink-muted">
+                        Client-side encrypted. Zero-knowledge architecture.
+                        <br />
+                        Your files never touch our servers in plaintext.
+                    </p>
+                    <div className="inline-flex flex-wrap items-center justify-center gap-2.5 border border-mf-border bg-mf-card px-4 py-2.5 font-mono text-[10px] tracking-wide text-mf-ink">
+                        <span className="relative flex h-2 w-2 shrink-0 rounded-full bg-mf-success">
+                            <span className="absolute inset-0 animate-ping rounded-full bg-mf-success/40" />
+                        </span>
+                        <span>AES-256 ACTIVE</span>
+                        <span className="h-3 w-px bg-mf-border" />
+                        <span>END-TO-END</span>
+                        <span className="h-3 w-px bg-mf-border" />
+                        <span>ZERO-KNOWLEDGE</span>
+                    </div>
                 </div>
 
                 <motion.div
                     layout
                     transition={shellTransition}
-                    className={`w-full ${selectedEntries.length > 0 || uploading || shareUrl ? 'max-w-[560px]' : 'max-w-[420px]'}`}
+                    className="w-full"
                 >
                     {!uploading && !shareUrl && (
-                        <motion.div
-                            layout
-                            transition={shellTransition}
-                            className="glass-card card-hover overflow-hidden px-4 py-5 sm:px-6 sm:py-6"
-                        >
+                        <MfCornerCard className="mf-fade-up overflow-hidden" style={{ animationDelay: '0.08s' }}>
                             <AnimatePresence initial={false} mode="wait">
                                 {selectedEntries.length === 0 ? (
                                     <motion.div
@@ -398,10 +453,11 @@ export default function HomePage() {
                                         animate={{ opacity: 1, y: 0 }}
                                         exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
                                         transition={shellTransition}
-                                        className="space-y-4"
                                     >
                                         <DragDropZone onFileSelect={handleFileSelect} />
-                                        <TrustStrip icon="lock" text="Files are encrypted in your browser before upload." />
+                                        <div className="border-t border-mf-border px-4 py-4">
+                                            <TrustStrip icon="lock" text="Files are encrypted in your browser before upload." />
+                                        </div>
                                     </motion.div>
                                 ) : (
                                     <motion.div
@@ -410,185 +466,167 @@ export default function HomePage() {
                                         animate={{ opacity: 1, y: 0 }}
                                         exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
                                         transition={shellTransition}
-                                        className="space-y-5"
                                     >
-                                        <motion.div
-                                            layout
-                                            transition={shellTransition}
-                                            className="rounded-[28px] border border-outline-variant bg-surface-container-high px-4 py-4"
-                                        >
-                                            <div className="flex items-start gap-3">
-                                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] bg-primary-container text-primary-200">
-                                                    <span className="material-symbols-outlined text-[24px] icon-filled">description</span>
+                                        <div className="flex items-center justify-between gap-3 border-b border-mf-border bg-mf-bg-panel px-4 py-4 sm:px-5">
+                                            <div className="flex min-w-0 flex-1 items-center gap-3">
+                                                <div className="flex h-8 w-8 shrink-0 items-center justify-center bg-mf-accent/10 text-mf-accent">
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+                                                        <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+                                                        <polyline points="13 2 13 9 20 9" />
+                                                    </svg>
                                                 </div>
-                                                <div className="min-w-0 flex-1">
-                                                    <div className="flex items-start justify-between gap-3">
-                                                        <div className="min-w-0">
-                                                            <p className="truncate text-base font-medium text-white">{selectionTitle}</p>
-                                                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-on-surface-variant">
-                                                                {selectionChips.map((chip) => (
-                                                                    <span key={chip} className="rounded-full border border-outline px-2.5 py-1">{chip}</span>
-                                                                ))}
-                                                            </div>
-                                                            {isCollection ? (
-                                                                <div className="mt-3 space-y-1 text-xs text-on-surface-variant">
-                                                                    {selectedEntries.slice(0, 3).map((entry) => (
-                                                                        <p key={entry.relativePath} className="truncate">
-                                                                            {entry.relativePath}
-                                                                        </p>
-                                                                    ))}
-                                                                    {selectedEntries.length > 3 ? (
-                                                                        <p className="text-primary-200">and {selectedEntries.length - 3} more…</p>
-                                                                    ) : null}
-                                                                </div>
+                                                <div className="min-w-0">
+                                                    <p className="truncate text-sm font-semibold text-mf-ink">{selectionTitle}</p>
+                                                    <div className="mt-1 flex flex-wrap gap-2 font-mono text-[10.5px] text-mf-ink-muted">
+                                                        {selectionChips.map((chip) => (
+                                                            <span key={chip}>{chip}</span>
+                                                        ))}
+                                                    </div>
+                                                    {isCollection ? (
+                                                        <div className="mt-2 space-y-0.5 font-mono text-[10px] text-mf-ink-muted">
+                                                            {selectedEntries.slice(0, 3).map((entry) => (
+                                                                <p key={entry.relativePath} className="truncate">{entry.relativePath}</p>
+                                                            ))}
+                                                            {selectedEntries.length > 3 ? (
+                                                                <p className="text-mf-accent">and {selectedEntries.length - 3} more…</p>
                                                             ) : null}
                                                         </div>
-                                                        <button
-                                                            type="button"
-                                                            onClick={clearSelectedFile}
-                                                            className="inline-flex items-center justify-center rounded-full px-2 py-1 text-sm text-on-surface-variant hover:bg-white/5 hover:text-white transition-colors"
-                                                        >
-                                                            Change
-                                                        </button>
-                                                    </div>
+                                                    ) : null}
                                                 </div>
                                             </div>
-                                        </motion.div>
+                                            <button
+                                                type="button"
+                                                onClick={clearSelectedFile}
+                                                className="shrink-0 font-mono text-xs text-mf-ink-muted transition-colors hover:text-mf-danger"
+                                                aria-label="Remove file"
+                                            >
+                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+                                                    <line x1="18" y1="6" x2="6" y2="18" />
+                                                    <line x1="6" y1="6" x2="18" y2="18" />
+                                                </svg>
+                                            </button>
+                                        </div>
 
-                                        <motion.div layout transition={shellTransition} className="space-y-5">
-                                            <div className="space-y-3">
-                                                <SurfaceLabel
-                                                    icon="schedule"
-                                                    title="Expires after"
-                                                    description="Choose when this secure link should expire."
-                                                />
+                                        <div className="grid border-b border-mf-border md:grid-cols-2">
+                                            <div className="flex items-center justify-between gap-3 border-b border-mf-border px-4 py-4 md:border-b-0 md:border-r">
+                                                <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-mf-ink-muted">Expires after</span>
                                                 <ExpirySelector selected={selectedExpiry} onChange={setSelectedExpiry} />
                                             </div>
-                                            <motion.div
-                                                layout
-                                                transition={shellTransition}
-                                                className="rounded-[28px] border border-outline-variant bg-surface-container-high overflow-hidden"
-                                            >
+                                            <div className="flex items-center px-4 py-4">
                                                 <button
                                                     type="button"
-                                                    onClick={() => setShowAdvancedProtection(value => !value)}
-                                                    className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left hover:bg-white/[0.03] transition-colors"
+                                                    onClick={() => setShowAdvancedProtection((v) => !v)}
+                                                    className="flex w-full items-center justify-between gap-2 text-left"
+                                                    aria-expanded={showAdvancedProtection}
                                                 >
                                                     <SurfaceLabel
                                                         icon="tune"
                                                         title="Advanced protection"
-                                                        description="Optional download limits, password, and preview."
+                                                        description="Optional limits, password, preview."
                                                         trailing={
-                                                            <span className="rounded-full border border-outline px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] text-on-surface-variant">
+                                                            <span className="border border-mf-border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-mf-ink-muted">
                                                                 Optional
                                                             </span>
                                                         }
                                                     />
-                                                    <span className={`material-symbols-outlined text-on-surface-variant transition-transform ${showAdvancedProtection ? 'rotate-180' : ''}`}>
+                                                    <span className={`material-symbols-outlined text-mf-ink-muted transition-transform ${showAdvancedProtection ? 'rotate-180' : ''}`}>
                                                         expand_more
                                                     </span>
                                                 </button>
+                                            </div>
+                                        </div>
 
-                                                <AnimatePresence initial={false}>
-                                                    {showAdvancedProtection && (
-                                                        <motion.div
-                                                            key="advanced-protection"
-                                                            initial={prefersReducedMotion ? false : { height: 0, opacity: 0 }}
-                                                            animate={{ height: 'auto', opacity: 1 }}
-                                                            exit={prefersReducedMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
-                                                            transition={shellTransition}
-                                                            className="overflow-hidden border-t border-outline-variant/80"
-                                                        >
-                                                            <div className="space-y-4 px-4 py-4">
-                                                                <div className="rounded-2xl border border-outline-variant bg-surface px-4 py-3">
-                                                                    <label className="block text-xs uppercase tracking-wide text-on-surface-variant mb-2">
-                                                                        Download limit
-                                                                    </label>
-                                                                    <input
-                                                                        type="number"
-                                                                        min="1"
-                                                                        step="1"
-                                                                        inputMode="numeric"
-                                                                        value={maxDownloadsInput}
-                                                                        onChange={(event) => setMaxDownloadsInput(event.target.value)}
-                                                                        placeholder="Unlimited"
-                                                                        className="w-full bg-transparent text-white placeholder:text-on-surface-variant/60 outline-none text-sm"
-                                                                    />
-                                                                    <p className="mt-2 text-[11px] text-on-surface-variant">
-                                                                        Each authorized download consumes one remaining view.
-                                                                    </p>
-                                                                </div>
+                                        <AnimatePresence initial={false}>
+                                            {showAdvancedProtection && (
+                                                <motion.div
+                                                    key="advanced-protection"
+                                                    initial={prefersReducedMotion ? false : { height: 0, opacity: 0 }}
+                                                    animate={{ height: 'auto', opacity: 1 }}
+                                                    exit={prefersReducedMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
+                                                    transition={shellTransition}
+                                                    className="overflow-hidden border-b border-mf-border bg-mf-bg-panel"
+                                                >
+                                                    <div className="space-y-4 px-4 py-4 sm:px-5">
+                                                        <div className="border border-mf-border bg-mf-card px-4 py-3">
+                                                            <label className="mb-2 block font-mono text-[10px] uppercase tracking-wide text-mf-ink-muted">Download limit</label>
+                                                            <input
+                                                                type="number"
+                                                                min="1"
+                                                                step="1"
+                                                                inputMode="numeric"
+                                                                value={maxDownloadsInput}
+                                                                onChange={(event) => setMaxDownloadsInput(event.target.value)}
+                                                                placeholder="Unlimited"
+                                                                className="w-full bg-transparent font-mono text-sm text-mf-ink outline-none placeholder:text-mf-ink-muted/60"
+                                                            />
+                                                            <p className="mt-2 font-mono text-[10px] text-mf-ink-muted">
+                                                                Each authorized download consumes one remaining view.
+                                                            </p>
+                                                        </div>
 
-                                                                <div className="rounded-2xl border border-outline-variant bg-surface px-4 py-3 space-y-3">
-                                                                    <div>
-                                                                        <label className="block text-xs uppercase tracking-wide text-on-surface-variant mb-2">
-                                                                            Password
-                                                                        </label>
-                                                                        <input
-                                                                            type="password"
-                                                                            autoComplete="new-password"
-                                                                            value={passwordInput}
-                                                                            onChange={(event) => setPasswordInput(event.target.value)}
-                                                                            placeholder="Leave blank for no password"
-                                                                            className="w-full bg-transparent text-white placeholder:text-on-surface-variant/60 outline-none text-sm"
-                                                                        />
-                                                                    </div>
-                                                                    <div>
-                                                                        <label className="block text-xs uppercase tracking-wide text-on-surface-variant mb-2">
-                                                                            Confirm password
-                                                                        </label>
-                                                                        <input
-                                                                            type="password"
-                                                                            autoComplete="new-password"
-                                                                            value={confirmPasswordInput}
-                                                                            onChange={(event) => setConfirmPasswordInput(event.target.value)}
-                                                                            placeholder="Repeat password"
-                                                                            className="w-full bg-transparent text-white placeholder:text-on-surface-variant/60 outline-none text-sm"
-                                                                        />
-                                                                    </div>
-                                                                    <p className="text-[11px] text-on-surface-variant">
-                                                                        Adds a server-side gate before anyone can fetch the encrypted file.
-                                                                    </p>
-                                                                </div>
-
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => setShowPreview(true)}
-                                                                    disabled={isCollection}
-                                                                    className="w-full h-10 rounded-full border border-outline text-on-surface-variant text-sm font-medium hover:bg-white/5 transition-colors flex items-center justify-center gap-2"
-                                                                >
-                                                                    <span className="material-symbols-outlined text-lg">visibility</span>
-                                                                    {isCollection ? 'Preview unavailable for collections' : 'Preview before sending'}
-                                                                </button>
+                                                        <div className="space-y-3 border border-mf-border bg-mf-card px-4 py-3">
+                                                            <div>
+                                                                <label className="mb-2 block font-mono text-[10px] uppercase tracking-wide text-mf-ink-muted">Password</label>
+                                                                <input
+                                                                    type="password"
+                                                                    autoComplete="new-password"
+                                                                    value={passwordInput}
+                                                                    onChange={(event) => setPasswordInput(event.target.value)}
+                                                                    placeholder="Leave blank for no password"
+                                                                    className="w-full bg-transparent font-mono text-sm text-mf-ink outline-none placeholder:text-mf-ink-muted/60"
+                                                                />
                                                             </div>
-                                                        </motion.div>
-                                                    )}
-                                                </AnimatePresence>
-                                            </motion.div>
+                                                            <div>
+                                                                <label className="mb-2 block font-mono text-[10px] uppercase tracking-wide text-mf-ink-muted">Confirm password</label>
+                                                                <input
+                                                                    type="password"
+                                                                    autoComplete="new-password"
+                                                                    value={confirmPasswordInput}
+                                                                    onChange={(event) => setConfirmPasswordInput(event.target.value)}
+                                                                    placeholder="Repeat password"
+                                                                    className="w-full bg-transparent font-mono text-sm text-mf-ink outline-none placeholder:text-mf-ink-muted/60"
+                                                                />
+                                                            </div>
+                                                            <p className="font-mono text-[10px] text-mf-ink-muted">
+                                                                Adds a server-side gate before anyone can fetch the encrypted file.
+                                                            </p>
+                                                        </div>
 
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setShowPreview(true)}
+                                                            disabled={isCollection}
+                                                            className="flex h-10 w-full items-center justify-center gap-2 border border-mf-border font-mono text-sm text-mf-ink-muted transition-colors hover:border-mf-ink hover:text-mf-ink disabled:opacity-50"
+                                                        >
+                                                            <span className="material-symbols-outlined text-lg">visibility</span>
+                                                            {isCollection ? 'Preview unavailable for collections' : 'Preview before sending'}
+                                                        </button>
+                                                    </div>
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+
+                                        <div className="p-4 sm:p-5">
                                             <button
                                                 type="button"
                                                 onClick={handleUpload}
-                                                className="w-full h-12 rounded-full font-medium text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] bg-primary text-black hover:shadow-purple-glow-button hover:bg-primary-400"
+                                                className="flex w-full items-center justify-center gap-2 bg-mf-accent py-4 text-sm font-bold uppercase tracking-wider text-white transition-opacity hover:opacity-90"
                                             >
-                                                <span className="material-symbols-outlined icon-filled">rocket_launch</span>
+                                                <span className="material-symbols-outlined icon-filled text-lg">rocket_launch</span>
                                                 Secure &amp; Send
                                             </button>
-
-                                            <TrustStrip icon="verified_user" text="Encrypted in your browser before anything leaves your device." />
-                                        </motion.div>
+                                            <div className="mt-4">
+                                                <TrustStrip icon="verified_user" text="Encrypted in your browser before anything leaves your device." />
+                                            </div>
+                                        </div>
                                     </motion.div>
                                 )}
                             </AnimatePresence>
-                        </motion.div>
+                        </MfCornerCard>
                     )}
 
                     {uploading && (
-                        <motion.div
-                            layout
-                            transition={shellTransition}
-                            className="glass-card px-4 py-5 sm:px-6 sm:py-6"
-                        >
+                        <MfCornerCard>
                             <UploadProgress
                                 progress={uploadProgress}
                                 fileName={uploadDisplayName || selectionTitle}
@@ -597,29 +635,35 @@ export default function HomePage() {
                                 stage={uploadStage}
                                 contextLabel={uploadContextLabel}
                             />
-                        </motion.div>
+                        </MfCornerCard>
                     )}
+
                     {shareUrl && (
-                        <motion.div
-                            layout
-                            transition={shellTransition}
-                            className="glass-card card-hover px-4 py-5 sm:px-6 sm:py-6 space-y-5"
-                        >
-                            <div className="text-center space-y-3">
-                                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-primary-container text-primary">
+                        <MfCornerCard className="space-y-5 p-5 sm:p-6">
+                            <div className="space-y-3 text-center">
+                                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-mf-success/15 text-mf-success">
                                     <span className="material-symbols-outlined text-3xl icon-filled">check_circle</span>
                                 </div>
                                 <div>
-                                    <h2 className="text-2xl font-medium text-white">Secure share ready</h2>
-                                    <p className="mt-1 text-sm text-on-surface-variant">
+                                    <h2 className="text-2xl font-bold text-mf-ink">Secure share ready</h2>
+                                    <p className="mt-1 font-mono text-sm text-mf-ink-muted">
                                         Copy the link below. Recipients decrypt the file directly in their browser.
                                     </p>
                                 </div>
                             </div>
 
-                            <div className="rounded-[24px] border border-outline-variant bg-surface-container-high px-4 py-4">
-                                <p className="text-[11px] uppercase tracking-[0.18em] text-on-surface-variant mb-2">Share link</p>
-                                <p className="break-all font-mono text-sm text-white/90">{shareUrl}</p>
+                            <div className="border border-mf-accent/25 bg-mf-accent/10 px-4 py-4">
+                                <p className="mb-2 font-mono text-[9.5px] uppercase tracking-[0.12em] text-mf-accent">Secure link ready</p>
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                                    <p className="flex-1 break-all font-mono text-xs text-mf-ink">{shareUrl}</p>
+                                    <button
+                                        type="button"
+                                        onClick={handleCopy}
+                                        className="shrink-0 bg-mf-accent px-4 py-2 font-mono text-[10px] font-medium uppercase tracking-wider text-white transition-opacity hover:opacity-90"
+                                    >
+                                        {copied ? 'Copied ✓' : 'Copy'}
+                                    </button>
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -637,7 +681,7 @@ export default function HomePage() {
                                 <SummaryItem
                                     label="Password"
                                     value={shareSummary?.passwordProtected ? 'Protected' : 'Not required'}
-                                    accent={shareSummary?.passwordProtected ? 'text-primary-200' : 'text-white'}
+                                    accent={shareSummary?.passwordProtected ? 'text-mf-accent' : 'text-mf-ink'}
                                 />
                                 <SummaryItem
                                     label="Recipient view"
@@ -646,21 +690,20 @@ export default function HomePage() {
                             </div>
 
                             <div className="flex flex-col gap-3 sm:flex-row">
-                                <button onClick={handleCopy} className="btn-primary flex-1 flex items-center justify-center gap-2">
-                                    <span className="material-symbols-outlined text-lg">{copied ? 'check' : 'content_copy'}</span>
-                                    {copied ? 'Copied!' : 'Copy Link'}
-                                </button>
-
                                 <button
-                                    onClick={() => setShowQR(value => !value)}
-                                    className="btn-secondary flex-1 flex items-center justify-center gap-2"
+                                    type="button"
+                                    onClick={() => setShowQR((v) => !v)}
+                                    className="flex flex-1 items-center justify-center gap-2 border border-mf-border bg-mf-bg-panel py-3 font-mono text-sm text-mf-ink transition-colors hover:border-mf-ink"
                                 >
                                     <span className="material-symbols-outlined text-lg">qr_code_2</span>
                                     {showQR ? 'Hide QR' : 'Show QR'}
                                 </button>
-
-                                <button onClick={handleUploadAnother} className="btn-secondary flex-1">
-                                    Upload Another
+                                <button
+                                    type="button"
+                                    onClick={handleUploadAnother}
+                                    className="flex flex-1 items-center justify-center gap-2 border border-mf-border bg-mf-bg-panel py-3 font-mono text-sm text-mf-ink transition-colors hover:border-mf-ink"
+                                >
+                                    Upload another
                                 </button>
                             </div>
 
@@ -671,7 +714,7 @@ export default function HomePage() {
                                         animate={{ opacity: 1, y: 0 }}
                                         exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -10 }}
                                         transition={shellTransition}
-                                        className="rounded-[24px] border border-outline-variant bg-surface-container-high p-5"
+                                        className="border border-mf-border bg-mf-bg-panel p-5"
                                     >
                                         <QRCode url={shareUrl} />
                                     </motion.div>
@@ -679,42 +722,14 @@ export default function HomePage() {
                             </AnimatePresence>
 
                             <TrustStrip icon="key" text="Zero-knowledge: the decryption key remains inside the shared URL." />
-                        </motion.div>
+                        </MfCornerCard>
                     )}
                 </motion.div>
+
+                {!uploading && !shareUrl ? <HowItWorks /> : null}
             </main>
 
-            <div className="fixed right-4 bottom-4 z-30 flex items-center gap-2 bg-surface/50 backdrop-blur-md px-3 py-2 rounded-full border border-outline-variant/30">
-                <a
-                    href="https://github.com/Basit-Ali0"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-on-surface-variant hover:text-white transition-colors hover:scale-110"
-                    title="GitHub"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                        <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
-                    </svg>
-                </a>
-                <div className="w-px h-3 bg-outline-variant/50 mx-1" />
-                <a
-                    href="https://x.com/BasitAli"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-on-surface-variant hover:text-white transition-colors hover:scale-110"
-                    title="X (Twitter)"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                    </svg>
-                </a>
-            </div>
-
-            <footer className="relative z-10 w-full text-center pb-4 text-[11px] text-on-surface-variant/50 flex items-center justify-center gap-1.5">
-                <span>Made with</span>
-                <span className="text-red-500">&hearts;</span>
-                <span>by Basit</span>
-            </footer>
+            <MfFooter />
 
             {showPreview && selectedFile && !isCollection ? (
                 <FilePreviewModal file={selectedFile} onClose={() => setShowPreview(false)} />

@@ -283,43 +283,110 @@ export async function encryptAndUploadCollection(fileEntries, shareId, onProgres
     const uploadedObjects = []
 
     try {
-        for (let index = 0; index < normalizedEntries.length; index++) {
-            const entry = normalizedEntries[index]
-            const material = await deriveCollectionItemMaterial(transferKeyHex, shareId, entry.itemId)
-            const randomIv = crypto.getRandomValues(new Uint8Array(12))
-            const objectKey = buildCollectionItemObjectKey(shareId, entry.itemId)
-            const uploadResult = await encryptAndUploadWithMaterial(
-                entry.file,
-                objectKey,
-                material.key,
-                randomIv,
-                (progress, statusText) => onProgress({
-                    progress,
-                    statusText,
-                    itemIndex: index,
-                    totalFiles,
-                    currentFileName: entry.file.name,
-                    currentItemId: entry.itemId,
-                    stage: 'item'
-                })
-            )
-            uploadedObjects.push({
-                objectKey: uploadResult.objectKey,
-                rollbackToken: uploadResult.rollbackToken
-            })
+        const MAX_CONCURRENT_COLLECTION_UPLOADS = 4
+        let activeUploads = 0
+        let nextIndex = 0
+        let hasFailed = false
+        let firstError = null
+        
+        let permanentlyCompletedBytes = 0
+        let completedFilesCount = 0
+        const activeBytesCompleted = new Map()
 
-            manifestItems.push({
-                itemId: entry.itemId,
-                order: entry.order,
-                name: entry.file.name,
-                relativePath: entry.relativePath,
-                size: entry.file.size,
-                type: entry.file.type,
-                ivHex: arrayBufferToHex(randomIv.buffer),
-                chunkCount: uploadResult.totalChunks,
-                chunkSizes: uploadResult.chunkSizes || null
+        function emitCollectionProgressSnapshot() {
+            let totalActiveBytes = 0
+            for (const bytes of activeBytesCompleted.values()) {
+                totalActiveBytes += bytes
+            }
+
+            const totalProgress = Math.min((permanentlyCompletedBytes + totalActiveBytes) / (totalSize || 1) * 100, 100)
+
+            onProgress({
+                progress: totalProgress,
+                statusText: 'Encrypting & uploading collection...',
+                completedFilesCount,
+                activeFilesCount: activeUploads,
+                totalFiles,
+                stage: 'collection_upload'
             })
         }
+
+        await new Promise((resolve, reject) => {
+            function pump() {
+                if (nextIndex >= totalFiles) {
+                    if (activeUploads === 0) {
+                        if (firstError) {
+                            reject(firstError)
+                        } else {
+                            resolve()
+                        }
+                    }
+                    return
+                }
+
+                while (activeUploads < MAX_CONCURRENT_COLLECTION_UPLOADS && nextIndex < totalFiles && !hasFailed) {
+                    const currentIndex = nextIndex++
+                    activeUploads++
+                    
+                    const entry = normalizedEntries[currentIndex]
+                    
+                    ;(async () => {
+                        try {
+                            const material = await deriveCollectionItemMaterial(transferKeyHex, shareId, entry.itemId)
+                            const randomIv = crypto.getRandomValues(new Uint8Array(12))
+                            const objectKey = buildCollectionItemObjectKey(shareId, entry.itemId)
+                            
+                            const uploadResult = await encryptAndUploadWithMaterial(
+                                entry.file,
+                                objectKey,
+                                material.key,
+                                randomIv,
+                                (progress) => {
+                                    if (hasFailed) return
+
+                                    activeBytesCompleted.set(currentIndex, (Math.max(0, progress) / 100) * entry.file.size)
+                                    emitCollectionProgressSnapshot()
+                                }
+                            )
+
+                            uploadedObjects[currentIndex] = {
+                                objectKey: uploadResult.objectKey,
+                                rollbackToken: uploadResult.rollbackToken
+                            }
+
+                            manifestItems[currentIndex] = {
+                                itemId: entry.itemId,
+                                order: entry.order,
+                                name: entry.file.name,
+                                relativePath: entry.relativePath,
+                                size: entry.file.size,
+                                type: entry.file.type,
+                                ivHex: arrayBufferToHex(randomIv.buffer),
+                                chunkCount: uploadResult.totalChunks,
+                                chunkSizes: uploadResult.chunkSizes || null
+                            }
+
+                            permanentlyCompletedBytes += entry.file.size
+                            completedFilesCount++
+                            activeBytesCompleted.delete(currentIndex)
+                            emitCollectionProgressSnapshot()
+                            
+                        } catch (err) {
+                            if (!hasFailed) {
+                                hasFailed = true
+                                firstError = err
+                            }
+                        } finally {
+                            activeUploads--
+                            if (!hasFailed || activeUploads === 0) {
+                                pump()
+                            }
+                        }
+                    })()
+                }
+            }
+            pump()
+        })
 
         const manifest = {
             version: 1,

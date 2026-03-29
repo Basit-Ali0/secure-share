@@ -287,16 +287,40 @@ export async function encryptAndUploadCollection(fileEntries, shareId, onProgres
         let activeUploads = 0
         let nextIndex = 0
         let hasFailed = false
+        let firstError = null
         
         let permanentlyCompletedBytes = 0
         let completedFilesCount = 0
         const activeBytesCompleted = new Map()
 
+        function emitCollectionProgressSnapshot() {
+            let totalActiveBytes = 0
+            for (const bytes of activeBytesCompleted.values()) {
+                totalActiveBytes += bytes
+            }
+
+            const totalProgress = Math.min((permanentlyCompletedBytes + totalActiveBytes) / (totalSize || 1) * 100, 100)
+
+            onProgress({
+                progress: totalProgress,
+                statusText: 'Encrypting & uploading collection...',
+                completedFilesCount,
+                activeFilesCount: activeUploads,
+                totalFiles,
+                stage: 'collection_upload'
+            })
+        }
+
         await new Promise((resolve, reject) => {
             function pump() {
-                if (hasFailed) return
                 if (nextIndex >= totalFiles) {
-                    if (activeUploads === 0) resolve()
+                    if (activeUploads === 0) {
+                        if (firstError) {
+                            reject(firstError)
+                        } else {
+                            resolve()
+                        }
+                    }
                     return
                 }
 
@@ -321,21 +345,7 @@ export async function encryptAndUploadCollection(fileEntries, shareId, onProgres
                                     if (hasFailed) return
 
                                     activeBytesCompleted.set(currentIndex, (Math.max(0, progress) / 100) * entry.file.size)
-                                    let totalActiveBytes = 0
-                                    for (const bytes of activeBytesCompleted.values()) {
-                                        totalActiveBytes += bytes
-                                    }
-                                    
-                                    const totalProgress = Math.min((permanentlyCompletedBytes + totalActiveBytes) / (totalSize || 1) * 100, 100)
-                                    
-                                    onProgress({
-                                        progress: totalProgress,
-                                        statusText: `Encrypting & uploading collection...`,
-                                        completedFilesCount,
-                                        activeFilesCount: activeUploads,
-                                        totalFiles,
-                                        stage: 'collection_upload'
-                                    })
+                                    emitCollectionProgressSnapshot()
                                 }
                             )
 
@@ -359,15 +369,18 @@ export async function encryptAndUploadCollection(fileEntries, shareId, onProgres
                             permanentlyCompletedBytes += entry.file.size
                             completedFilesCount++
                             activeBytesCompleted.delete(currentIndex)
+                            emitCollectionProgressSnapshot()
                             
                         } catch (err) {
                             if (!hasFailed) {
                                 hasFailed = true
-                                reject(err)
+                                firstError = err
                             }
                         } finally {
                             activeUploads--
-                            pump()
+                            if (!hasFailed || activeUploads === 0) {
+                                pump()
+                            }
                         }
                     })()
                 }

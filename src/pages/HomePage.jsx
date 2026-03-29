@@ -209,9 +209,14 @@ export default function HomePage() {
                     selectedEntries,
                     fileId,
                     ({ progress, statusText, completedFilesCount, activeFilesCount, totalFiles, currentFileName, stage }) => {
-                        setUploadProgress(progress * 0.95)
                         setUploadStatus(statusText)
-                        setUploadStage(stage === 'manifest' ? 'saving' : getStageFromStatus(statusText))
+                        if (stage === 'manifest') {
+                            setUploadProgress(95 + progress * 0.05)
+                            setUploadStage('saving')
+                        } else {
+                            setUploadProgress(progress * 0.95)
+                            setUploadStage('encrypting')
+                        }
                         setUploadDisplayName(stage === 'manifest' ? 'Share manifest' : selectionTitle)
 
                         if (stage === 'manifest') {

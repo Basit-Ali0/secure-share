@@ -25,7 +25,6 @@ export default function FilePreviewModal({ file, onClose }) {
     const [preview, setPreview] = useState({ url: null, type: null })
     const closeButtonRef = useRef(null)
     const previousFocusRef = useRef(null)
-    const restoreTargetCapturedRef = useRef(false)
     const overlayRef = useRef(null)
 
     useLayoutEffect(() => {
@@ -56,12 +55,10 @@ export default function FilePreviewModal({ file, onClose }) {
 
     useLayoutEffect(() => {
         if (!file) return undefined
-        if (!restoreTargetCapturedRef.current) {
-            previousFocusRef.current = document.activeElement
-            restoreTargetCapturedRef.current = true
-        }
+        previousFocusRef.current = document.activeElement
         const id = requestAnimationFrame(() => {
-            closeButtonRef.current?.focus()
+            const focusables = overlayRef.current ? listTabbableElements(overlayRef.current) : []
+            ;(focusables[0] || closeButtonRef.current)?.focus()
         })
         return () => cancelAnimationFrame(id)
     }, [file])
@@ -94,14 +91,19 @@ export default function FilePreviewModal({ file, onClose }) {
 
             if (e.key !== 'Tab') return
 
-            const active = document.activeElement
-            if (!root.contains(active)) return
-
             const focusables = listTabbableElements(root)
             if (focusables.length === 0) return
 
             const first = focusables[0]
             const last = focusables[focusables.length - 1]
+            const active = document.activeElement
+
+            if (!root.contains(active)) {
+                e.preventDefault()
+                ;(e.shiftKey ? last : first).focus()
+                return
+            }
+
             const idx = focusables.indexOf(active)
 
             if (idx === -1) {

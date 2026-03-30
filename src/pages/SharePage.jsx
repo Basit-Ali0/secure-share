@@ -157,11 +157,24 @@ export default function SharePage() {
     }, [identifier])
 
     useEffect(() => {
+        setMetadata(null)
+        setError(null)
+        setTimeLeft(null)
         setExpiryBaselineMs(null)
-    }, [identifier])
-
-    useEffect(() => {
         setShareActionError('')
+        setDownloadComplete(false)
+        setDownloadProgress(0)
+        setDownloadStatus('')
+        setPasswordInput('')
+        setUnlockError('')
+        setCollectionManifest(null)
+        setCollectionSessionToken('')
+        setTransferKey('')
+        setShowQR(false)
+        setCollectionLoading(false)
+        setCollectionDownloadAll(false)
+        setActiveCollectionItemId('')
+        setIsUnlocked(false)
     }, [identifier])
 
     useEffect(() => {
@@ -375,6 +388,8 @@ export default function SharePage() {
     }
 
     async function handleDownload() {
+        let deferSingleFileSuccess = false
+
         try {
             setShareActionError('')
             setDownloading(true)
@@ -461,6 +476,7 @@ export default function SharePage() {
                 }
             )
 
+            deferSingleFileSuccess = true
             setTimeout(() => {
                 setDownloading(false)
                 setDownloadComplete(true)
@@ -474,7 +490,9 @@ export default function SharePage() {
             }
             setDownloadProgress(0)
         } finally {
-            setDownloading(false)
+            if (!deferSingleFileSuccess) {
+                setDownloading(false)
+            }
             setCollectionLoading(false)
             terminateWorkerPool()
         }

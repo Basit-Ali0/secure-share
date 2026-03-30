@@ -1,5 +1,6 @@
 /* MaskedFile design tokens — light (default) and dark (.dark on html) */
 :root {
+  color-scheme: light;
   --mf-bg: 245 243 238;
   --mf-bg-panel: 238 234 225;
   --mf-card: 255 255 255;
@@ -14,6 +15,7 @@
 }
 
 html.dark {
+  color-scheme: dark;
   --mf-bg: 14 14 13;
   --mf-bg-panel: 22 22 20;
   --mf-card: 24 24 22;

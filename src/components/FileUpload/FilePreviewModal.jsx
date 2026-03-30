@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { popInProps, transitionSec } from '../../lib/motionPresets.js'
 
@@ -6,8 +6,9 @@ export default function FilePreviewModal({ file, onClose }) {
     const prefersReducedMotion = useReducedMotion()
     const [previewUrl, setPreviewUrl] = useState(null)
     const [fileType, setFileType] = useState(null)
+    const closeButtonRef = useRef(null)
+    const previousFocusRef = useRef(null)
 
-    // Escape key handler
     const handleKeyDown = useCallback((e) => {
         if (e.key === 'Escape') onClose()
     }, [onClose])
@@ -16,6 +17,28 @@ export default function FilePreviewModal({ file, onClose }) {
         document.addEventListener('keydown', handleKeyDown)
         return () => document.removeEventListener('keydown', handleKeyDown)
     }, [handleKeyDown])
+
+    useLayoutEffect(() => {
+        if (!file) return undefined
+        previousFocusRef.current = document.activeElement
+        const id = requestAnimationFrame(() => {
+            closeButtonRef.current?.focus()
+        })
+        return () => cancelAnimationFrame(id)
+    }, [file])
+
+    useEffect(() => {
+        return () => {
+            const el = previousFocusRef.current
+            if (el && typeof el.focus === 'function') {
+                try {
+                    el.focus()
+                } catch {
+                    // Element may no longer be focusable
+                }
+            }
+        }
+    }, [])
 
     useEffect(() => {
         if (!file) return
@@ -44,26 +67,33 @@ export default function FilePreviewModal({ file, onClose }) {
 
     if (!file) return null
 
+    const { exit: _panelExit, ...panelMotion } = popInProps(prefersReducedMotion)
+
     return (
         <motion.div
             className="fixed inset-0 z-50 flex items-center justify-center bg-mf-ink/80 p-4 backdrop-blur-sm"
             onClick={onClose}
             role="dialog"
             aria-modal="true"
-            aria-label="File preview"
+            aria-labelledby="file-preview-title"
             initial={prefersReducedMotion ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
+            exit={prefersReducedMotion ? { opacity: 1 } : { opacity: 0 }}
             transition={transitionSec(0.22)}
         >
             <motion.div
                 className="max-h-[90vh] w-full max-w-4xl overflow-auto border border-mf-border bg-mf-card"
                 onClick={(e) => e.stopPropagation()}
-                {...popInProps(prefersReducedMotion)}
+                {...panelMotion}
             >
                 <div className="p-6">
                     <div className="mb-4 flex items-start justify-between">
-                        <h3 className="text-xl font-bold text-mf-ink">Preview</h3>
+                        <h3 id="file-preview-title" className="text-xl font-bold text-mf-ink" tabIndex={-1}>
+                            Preview
+                        </h3>
                         <button
+                            ref={closeButtonRef}
+                            type="button"
                             onClick={onClose}
                             className="flex h-10 w-10 items-center justify-center rounded-full text-mf-ink-muted transition-colors hover:bg-mf-bg-panel"
                             aria-label="Close preview"

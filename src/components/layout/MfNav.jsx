@@ -30,6 +30,7 @@ export default function MfNav({ badge = null, homeHref = '/' }) {
                     type="button"
                     onClick={(event) => toggleTheme(event)}
                     className="flex h-9 w-9 items-center justify-center rounded border border-mf-border text-mf-ink-muted transition-colors hover:border-mf-ink hover:text-mf-ink"
+                    aria-pressed={theme === 'dark'}
                     aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
                 >
                     <span className="material-symbols-outlined text-[20px]">{theme === 'dark' ? 'light_mode' : 'dark_mode'}</span>

@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation, Outlet } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useOutlet } from 'react-router-dom'
 import { useEffect } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import HomePage from './pages/HomePage'
@@ -18,13 +18,14 @@ function AnalyticsTracker() {
 
 function AnimatedOutlet() {
     const location = useLocation()
+    const outlet = useOutlet()
     const reduce = useReducedMotion()
     const presence = routePresenceProps(reduce)
 
     return (
         <AnimatePresence mode="wait">
             <motion.div key={location.pathname} className="min-h-screen" {...presence}>
-                <Outlet />
+                {outlet}
             </motion.div>
         </AnimatePresence>
     )

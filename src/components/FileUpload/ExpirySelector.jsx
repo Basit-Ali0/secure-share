@@ -13,6 +13,7 @@ export default function ExpirySelector({ selected, onChange }) {
                     <button
                         key={`${option.unit}-${option.value}`}
                         type="button"
+                        aria-label={option.label}
                         onClick={() => onChange(option)}
                         className={`border px-2.5 py-1.5 font-mono text-[10px] tracking-wide transition-colors ${
                             isOn

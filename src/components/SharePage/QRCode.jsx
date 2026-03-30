@@ -9,21 +9,24 @@ export default function QRCode({ url }) {
     useEffect(() => {
         let cancelled = false
 
-        if (url) {
-            const isDark = theme === 'dark'
-            QRCodeLib.toDataURL(url, {
-                width: 256,
-                margin: 2,
-                color: {
-                    dark: isDark ? '#f5f3ee' : '#0a0909',
-                    light: isDark ? '#181816' : '#ffffff',
-                },
-            })
-                .then((dataUrl) => {
-                    if (!cancelled) setQrDataUrl(dataUrl)
-                })
-                .catch((err) => console.error('QR code generation failed:', err))
+        if (!url) {
+            setQrDataUrl('')
+            return undefined
         }
+
+        const isDark = theme === 'dark'
+        QRCodeLib.toDataURL(url, {
+            width: 256,
+            margin: 2,
+            color: {
+                dark: isDark ? '#f5f3ee' : '#0a0909',
+                light: isDark ? '#181816' : '#ffffff',
+            },
+        })
+            .then((dataUrl) => {
+                if (!cancelled) setQrDataUrl(dataUrl)
+            })
+            .catch((err) => console.error('QR code generation failed:', err))
 
         return () => {
             cancelled = true

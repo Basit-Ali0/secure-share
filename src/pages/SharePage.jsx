@@ -153,10 +153,14 @@ export default function SharePage() {
         function updateCountdown() {
             const diff = new Date(metadata.expires_at) - new Date()
             setTimeLeft(diff > 0 ? diff : 0)
+            return diff <= 0
         }
 
-        updateCountdown()
-        const interval = setInterval(updateCountdown, 1000)
+        if (updateCountdown()) return undefined
+
+        const interval = setInterval(() => {
+            if (updateCountdown()) clearInterval(interval)
+        }, 1000)
         return () => clearInterval(interval)
     }, [metadata?.expires_at])
 
@@ -534,6 +538,71 @@ export default function SharePage() {
     }
 
     const shareUrl = window.location.href
+    const passwordShareExpired =
+        requiresPassword &&
+        Boolean(metadata?.expires_at) &&
+        new Date(metadata.expires_at) <= new Date()
+    const passwordShareLimitOnly = requiresPassword && limitReached
+
+    if (passwordShareExpired) {
+        return (
+            <div className="min-h-screen bg-mf-bg text-mf-ink">
+                <ShareHelmet
+                    title={`Share Expired | ${SITE_NAME}`}
+                    description="This encrypted file share has expired."
+                    url={sharePageUrl}
+                />
+                <MfNav badge="Secure Download" />
+                <motion.main className="mx-auto max-w-lg px-4 py-12 md:py-16" {...fadeUpProps(prefersReducedMotion, 16, 0.06)}>
+                    <MfCornerCard className="px-8 py-12 text-center md:px-12">
+                        <span className="material-symbols-outlined mb-4 text-4xl text-mf-danger">error</span>
+                        <h1 className="mb-2 text-lg font-bold text-mf-ink">This link has expired.</h1>
+                        <p className="mx-auto mb-8 max-w-md font-mono text-[11px] leading-relaxed text-mf-ink-muted">
+                            The transfer window has passed. Ask the sender to create a new link.
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => navigate('/')}
+                            className="w-full bg-mf-ink py-3.5 text-sm font-bold uppercase tracking-wider text-mf-bg transition-colors hover:bg-mf-accent"
+                        >
+                            Send a new file
+                        </button>
+                    </MfCornerCard>
+                </motion.main>
+                <MfFooter showSendLink />
+            </div>
+        )
+    }
+
+    if (passwordShareLimitOnly) {
+        return (
+            <div className="min-h-screen bg-mf-bg text-mf-ink">
+                <ShareHelmet
+                    title={`Download Limit | ${SITE_NAME}`}
+                    description="This share has no downloads remaining."
+                    url={sharePageUrl}
+                />
+                <MfNav badge="Secure Download" />
+                <motion.main className="mx-auto max-w-lg px-4 py-12 md:py-16" {...fadeUpProps(prefersReducedMotion, 16, 0.06)}>
+                    <MfCornerCard className="px-8 py-12 text-center md:px-12">
+                        <span className="material-symbols-outlined mb-4 text-4xl text-mf-danger">block</span>
+                        <h1 className="mb-2 text-lg font-bold text-mf-ink">Download limit reached</h1>
+                        <p className="mx-auto mb-8 max-w-md font-mono text-[11px] leading-relaxed text-mf-ink-muted">
+                            No downloads remain for this link. Ask the sender to share again.
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => navigate('/')}
+                            className="w-full bg-mf-ink py-3.5 text-sm font-bold uppercase tracking-wider text-mf-bg transition-colors hover:bg-mf-accent"
+                        >
+                            Upload a file
+                        </button>
+                    </MfCornerCard>
+                </motion.main>
+                <MfFooter showSendLink />
+            </div>
+        )
+    }
 
     if (requiresPassword) {
         return (
@@ -768,7 +837,7 @@ export default function SharePage() {
                                     Send a new file
                                 </button>
                             </div>
-                        ) : limitReached ? (
+                        ) : limitReached && !downloading && !downloadComplete && !collectionManifest ? (
                             <div className="border-t border-mf-border px-8 py-9">
                                 <button
                                     type="button"
@@ -1090,7 +1159,7 @@ export default function SharePage() {
                                 Send a new file
                             </button>
                         </div>
-                    ) : limitReached ? (
+                    ) : limitReached && !downloading && !downloadComplete ? (
                         <div className="border-t border-mf-border px-8 py-9">
                             <button
                                 type="button"

@@ -192,12 +192,16 @@ export default function HomePage() {
         setShowQR(false)
         setShowPreview(false)
         setPasswordProtectOn(false)
+        setPasswordInput('')
+        setConfirmPasswordInput('')
     }
 
     const clearSelectedFile = () => {
         setSelectedEntries([])
         setPasswordProtectOn(false)
         setShowPreview(false)
+        setPasswordInput('')
+        setConfirmPasswordInput('')
     }
 
     const removeSelectedEntryAt = (index) => {
@@ -205,6 +209,8 @@ export default function HomePage() {
         setShareUrl(null)
         setCopied(false)
         setShowQR(false)
+        setPasswordInput('')
+        setConfirmPasswordInput('')
     }
 
     const handleUploadAnother = () => {
@@ -869,9 +875,15 @@ export default function HomePage() {
 
             <MfFooter />
 
-            {showPreview && selectedFile && !isCollection ? (
-                <FilePreviewModal file={selectedFile} onClose={() => setShowPreview(false)} />
-            ) : null}
+            <AnimatePresence>
+                {showPreview && selectedFile && !isCollection ? (
+                    <FilePreviewModal
+                        key={`${selectedFile.name}-${selectedFile.size}-${selectedFile.lastModified}`}
+                        file={selectedFile}
+                        onClose={() => setShowPreview(false)}
+                    />
+                ) : null}
+            </AnimatePresence>
         </div>
     )
 }

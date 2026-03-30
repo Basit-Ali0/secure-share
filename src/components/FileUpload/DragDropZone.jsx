@@ -90,7 +90,7 @@ export default function DragDropZone({ onFileSelect }) {
                 scale: !prefersReducedMotion && isDragging ? 1.014 : 1,
             }}
             transition={{ type: 'spring', stiffness: 420, damping: 28 }}
-            className={`cursor-pointer border-b border-mf-border px-6 py-12 text-center transition-colors sm:px-10 ${
+            className={`group cursor-pointer border-b border-mf-border px-6 py-12 text-center transition-colors sm:px-10 ${
                 isDragging ? 'bg-mf-accent/10' : 'hover:bg-mf-accent/10'
             }`}
         >

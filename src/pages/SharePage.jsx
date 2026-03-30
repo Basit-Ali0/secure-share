@@ -36,15 +36,6 @@ function ShareHelmet({ title, description, url }) {
     )
 }
 
-function ShareStat({ label, value, accent = 'text-mf-ink' }) {
-    return (
-        <div className="flex flex-col gap-1 px-4 py-4 text-center">
-            <p className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-mf-ink-muted">{label}</p>
-            <p className={`text-sm font-bold ${accent}`}>{value}</p>
-        </div>
-    )
-}
-
 function formatCountdownHMS(ms) {
     if (ms <= 0) return '00:00:00'
     const s = Math.floor(ms / 1000)
@@ -65,7 +56,12 @@ function CollectionListItem({ item, displayName, downloading, disabled, onDownlo
             <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-mf-ink">{displayName}</p>
                 <div className="mt-1 flex flex-wrap items-center gap-2 font-mono text-[10px] text-mf-ink-muted">
-                    <span>{formatFileSize(item.size)}</span>
+                    <span className="inline-flex items-center gap-0.5">
+                        <span className="material-symbols-outlined text-[12px] leading-none" aria-hidden>
+                            download
+                        </span>
+                        {formatFileSize(item.size)}
+                    </span>
                     {item.type ? <span>• {item.type}</span> : null}
                 </div>
                 {relativePath ? <p className="mt-1 truncate font-mono text-[10px] text-mf-ink-muted">{relativePath}</p> : null}
@@ -606,6 +602,9 @@ export default function SharePage() {
             timeLeft != null && expiryBaselineMs
                 ? Math.min(100, Math.max(0, (timeLeft / expiryBaselineMs) * 100))
                 : 100
+        const collectionExpired = timeLeft !== null && timeLeft <= 0
+        const collectionDownloadsLeftLabel =
+            maxDownloads == null ? 'Unlimited' : `${remainingDownloads} download${remainingDownloads === 1 ? '' : 's'} left`
 
         return (
             <div className="min-h-screen bg-mf-bg text-mf-ink">
@@ -616,154 +615,299 @@ export default function SharePage() {
                 />
                 <MfNav badge="Secure Download" />
 
-                <main className="mx-auto max-w-[520px] px-4 py-10 md:py-14">
-                    <div className="mb-8 flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.14em] text-mf-ink-muted">
+                <main className="mx-auto max-w-[860px] px-6 pb-16 pt-10 md:px-12 md:pt-[4.5rem]">
+                    <div className="mf-fade-up mb-5 flex items-center gap-2.5 font-mono text-[10.5px] uppercase tracking-[0.14em] text-mf-ink-muted">
                         <span className="h-px w-[22px] bg-mf-accent" />
-                        Encrypted collection
+                        Incoming transfer
                     </div>
-                    <h1 className="mb-2 text-3xl font-extrabold leading-tight tracking-tight md:text-4xl">
-                        {metadata.file_count} secure file{metadata.file_count === 1 ? '' : 's'}
+                    <h1 className="mf-fade-up mb-10 text-[clamp(2rem,5vw,2.625rem)] font-extrabold leading-[1.05] tracking-tight md:mb-11">
+                        Someone sent
+                        <br />
+                        you a <span className="text-mf-accent">collection.</span>
                     </h1>
-                    <p className="mb-8 font-mono text-sm text-mf-ink-muted">Download each file with end-to-end decryption in your browser.</p>
 
-                    <MfCornerCard className="flex flex-col gap-6 overflow-hidden p-6">
-                        <div className="flex flex-wrap items-center justify-center gap-2 font-mono text-xs text-mf-ink-muted">
-                            <span className="border border-mf-border px-3 py-1">{formatFileSize(metadata.total_size || 0)}</span>
-                            <span className="border border-mf-border px-3 py-1">Collection</span>
+                    <MfCornerCard className="overflow-hidden">
+                        <div className="grid grid-cols-1 border-b border-mf-border md:grid-cols-[90px_1fr_auto] md:items-stretch">
+                            <div className="flex flex-col items-center justify-center gap-1.5 bg-mf-accent py-8 md:py-0">
+                                <span className="material-symbols-outlined text-[28px] text-white/90 icon-filled" aria-hidden>
+                                    folder
+                                </span>
+                                <span className="px-1 text-center font-mono text-[10px] font-medium uppercase leading-tight tracking-[0.12em] text-white">
+                                    {metadata.file_count} file{metadata.file_count === 1 ? '' : 's'}
+                                </span>
+                            </div>
+                            <div className="min-w-0 border-b border-mf-border px-6 py-6 md:border-b-0 md:border-r">
+                                <p className="text-xl font-bold tracking-tight text-mf-ink md:text-[22px]">
+                                    Encrypted collection
+                                </p>
+                                <p className="mt-1 font-mono text-xs text-mf-ink-muted">
+                                    Reveal the file list, then download each item with end-to-end decryption in your browser.
+                                </p>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    <span className="inline-flex items-center gap-1.5 border border-mf-border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-mf-ink-muted">
+                                        <span className="material-symbols-outlined text-[14px] leading-none" aria-hidden>
+                                            download
+                                        </span>
+                                        {formatFileSize(metadata.total_size || 0)}
+                                    </span>
+                                    <span className="inline-flex items-center gap-1.5 border border-mf-border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-mf-ink-muted">
+                                        <span className="material-symbols-outlined text-[14px] leading-none" aria-hidden>
+                                            schedule
+                                        </span>
+                                        {timeLeft !== null ? formatTimeLeft(timeLeft) : '—'}
+                                    </span>
+                                    <span className="inline-flex items-center gap-1.5 border border-mf-border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-mf-ink-muted">
+                                        <span className="material-symbols-outlined text-[14px] leading-none" aria-hidden>
+                                            visibility
+                                        </span>
+                                        {collectionDownloadsLeftLabel}
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="flex flex-col justify-center gap-2 px-6 py-5 md:min-w-[180px]">
+                                <button
+                                    type="button"
+                                    onClick={() => navigate('/')}
+                                    className="inline-flex items-center justify-center gap-2 border border-mf-border py-2 font-mono text-[10.5px] uppercase tracking-wider text-mf-ink-muted transition-colors hover:border-mf-ink hover:text-mf-ink"
+                                >
+                                    <span className="material-symbols-outlined text-sm" aria-hidden>
+                                        upload
+                                    </span>
+                                    Send a file
+                                </button>
+                            </div>
                         </div>
 
-                        <div className="grid grid-cols-3 divide-x divide-mf-border border border-mf-border bg-mf-bg-panel">
-                            <ShareStat label="Files" value={metadata.file_count} />
-                            <ShareStat
-                                label="Views left"
-                                value={maxDownloads == null ? 'Unlimited' : `${remainingDownloads} / ${maxDownloads}`}
-                                accent={limitReached ? 'text-mf-danger' : 'text-mf-accent'}
-                            />
-                            <ShareStat
-                                label="Expires in"
-                                value={timeLeft !== null ? formatTimeLeft(timeLeft) : 'Unknown'}
-                                accent={
-                                    timeLeft !== null && timeLeft <= 0
-                                        ? 'text-mf-danger'
-                                        : timeLeft !== null && timeLeft < 3600000
-                                            ? 'text-mf-warn'
-                                            : 'text-mf-ink'
-                                }
-                            />
+                        <div className="grid grid-cols-1 divide-y divide-mf-border border-b border-mf-border md:grid-cols-3 md:divide-x md:divide-y-0">
+                            <div className="px-5 py-4">
+                                <p className="flex items-center gap-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-mf-ink-muted">
+                                    <span className="material-symbols-outlined text-[12px] leading-none" aria-hidden>
+                                        lock
+                                    </span>
+                                    Encryption
+                                </p>
+                                <p className="mt-1 flex items-center gap-2 text-sm font-bold text-mf-ink">
+                                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-mf-success" aria-hidden />
+                                    AES-256-GCM
+                                </p>
+                            </div>
+                            <div className="px-5 py-4">
+                                <p className="flex items-center gap-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-mf-ink-muted">
+                                    <span className="material-symbols-outlined text-[12px] leading-none" aria-hidden>
+                                        vpn_key
+                                    </span>
+                                    Key location
+                                </p>
+                                <p className="mt-1 flex items-center gap-2 text-sm font-bold text-mf-ink">
+                                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-mf-success" aria-hidden />
+                                    URL fragment only
+                                </p>
+                            </div>
+                            <div className="px-5 py-4">
+                                <p className="flex items-center gap-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-mf-ink-muted">
+                                    <span className="material-symbols-outlined text-[12px] leading-none" aria-hidden>
+                                        cloud
+                                    </span>
+                                    Server sees
+                                </p>
+                                <p className="mt-1 flex items-center gap-2 text-sm font-bold text-mf-ink">
+                                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-mf-success" aria-hidden />
+                                    Ciphertext only
+                                </p>
+                            </div>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2 border border-mf-border bg-mf-bg-panel px-4 py-3 font-mono text-[11px] text-mf-ink-muted">
-                            <span className="material-symbols-outlined text-mf-accent text-lg">key</span>
-                            <span>Transfer key in URL · Manifest decrypts in your browser</span>
-                            <span className="material-symbols-outlined text-mf-success ml-auto text-lg">check_circle</span>
-                        </div>
-
-                        {timeLeft !== null && timeLeft > 0 ? (
-                            <div className="border-b border-mf-border px-1 pb-4">
+                        {!collectionExpired ? (
+                            <div className="border-b border-mf-border px-6 py-5">
                                 <div className="mb-2 flex justify-between font-mono text-[10px] uppercase tracking-wider text-mf-ink-muted">
-                                    <span>Link expires in</span>
-                                    <span className={timeLeft < 3600000 ? 'text-mf-warn' : 'text-mf-ink'}>{formatCountdownHMS(timeLeft)}</span>
+                                    <span className="inline-flex items-center gap-1.5">
+                                        <span className="material-symbols-outlined text-[13px] leading-none" aria-hidden>
+                                            schedule
+                                        </span>
+                                        Link expires in
+                                    </span>
+                                    <span className={timeLeft !== null && timeLeft < 3600000 ? 'text-mf-warn' : 'text-mf-ink'}>
+                                        {timeLeft !== null ? formatCountdownHMS(timeLeft) : '—'}
+                                    </span>
                                 </div>
                                 <div className="relative h-0.5 bg-mf-border">
                                     <div
-                                        className="mf-progress-fill absolute left-0 top-0 h-full bg-gradient-to-r from-mf-success to-mf-warn"
+                                        className="absolute left-0 top-0 h-full bg-gradient-to-r from-mf-success to-mf-warn transition-all duration-500"
                                         style={{ width: `${expiryFillPct}%` }}
                                     />
+                                    {expiryFillPct > 0 && expiryFillPct < 100 ? (
+                                        <div
+                                            className="pointer-events-none absolute top-1/2 z-[1] h-2 w-px -translate-x-1/2 -translate-y-1/2 bg-mf-ink"
+                                            style={{ left: `${expiryFillPct}%` }}
+                                            aria-hidden
+                                        />
+                                    ) : null}
                                 </div>
                             </div>
                         ) : null}
 
-                        {!collectionManifest ? (
-                            <>
+                        {collectionExpired ? (
+                            <div className="border-t border-mf-border px-8 py-12 text-center">
+                                <span className="material-symbols-outlined mb-4 text-4xl text-mf-danger">error</span>
+                                <p className="text-lg font-bold text-mf-ink">This link has expired.</p>
+                                <p className="mx-auto mt-2 max-w-md font-mono text-[11px] leading-relaxed text-mf-ink-muted">
+                                    The transfer window has passed. Ask the sender to create a new link.
+                                </p>
                                 <button
                                     type="button"
-                                    onClick={!limitReached ? handleDownload : undefined}
-                                    disabled={downloading || limitReached}
-                                    className={`flex w-full items-center justify-center gap-2 py-4 text-sm font-bold uppercase tracking-wider transition-opacity ${
-                                        limitReached
-                                            ? 'cursor-not-allowed bg-mf-danger/20 text-mf-danger'
-                                            : 'bg-mf-ink text-mf-bg hover:bg-mf-accent'
-                                    }`}
+                                    onClick={() => navigate('/')}
+                                    className="mx-auto mt-8 flex w-full max-w-[280px] items-center justify-center gap-2 bg-mf-ink py-3.5 text-sm font-bold uppercase tracking-wider text-mf-bg hover:bg-mf-accent"
                                 >
-                                    {collectionLoading ? (
-                                        <>
-                                            <div className="h-5 w-5 animate-spin rounded-full border-2 border-mf-bg border-t-transparent" />
-                                            {downloadStatus || 'Revealing collection...'}
-                                        </>
-                                    ) : limitReached ? (
-                                        <>
-                                            <span className="material-symbols-outlined text-xl">block</span>
-                                            Download limit reached
-                                        </>
-                                    ) : (
-                                        <>
-                                            <span className="material-symbols-outlined text-xl">folder_open</span>
-                                            Reveal files
-                                        </>
-                                    )}
+                                    Send a new file
                                 </button>
-
-                                {downloading ? (
-                                    <div className="h-0.5 w-full bg-mf-border">
-                                        <div className="mf-progress-fill" style={{ width: `${downloadProgress}%` }} />
-                                    </div>
-                                ) : null}
-                            </>
+                            </div>
+                        ) : limitReached ? (
+                            <div className="border-t border-mf-border px-8 py-9">
+                                <button
+                                    type="button"
+                                    disabled
+                                    className="flex w-full cursor-not-allowed items-center justify-center gap-2 bg-mf-danger/15 py-4 text-sm font-bold uppercase tracking-wider text-mf-danger"
+                                >
+                                    <span className="material-symbols-outlined text-xl">block</span>
+                                    Download limit reached
+                                </button>
+                                <p className="mt-4 text-center font-mono text-[11px] text-mf-ink-muted">
+                                    No downloads remain. Ask the sender to share again.
+                                </p>
+                            </div>
                         ) : (
-                            <div className="space-y-4">
-                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                    <div>
-                                        <p className="text-sm font-bold text-mf-ink">Collection contents</p>
-                                        <p className="font-mono text-xs text-mf-ink-muted">
-                                            Download individual files or take the full set sequentially.
-                                        </p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={handleDownloadAll}
-                                        disabled={collectionInteractionLocked}
-                                        className="shrink-0 bg-mf-accent px-4 py-2.5 font-mono text-xs font-medium uppercase tracking-wider text-white disabled:opacity-50"
-                                    >
-                                        {collectionDownloadAll ? 'Downloading…' : 'Download all'}
-                                    </button>
-                                </div>
+                            <div className="px-8 py-9">
+                                {!collectionManifest ? (
+                                    <>
+                                        {downloading ? (
+                                            <div className="mb-4">
+                                                <div className="mb-2 flex justify-between font-mono text-[10px] uppercase tracking-wider text-mf-ink-muted">
+                                                    <span>Decrypting manifest</span>
+                                                    <span>{Math.round(downloadProgress)}%</span>
+                                                </div>
+                                                <div className="h-0.5 bg-mf-border">
+                                                    <div className="mf-progress-fill" style={{ width: `${downloadProgress}%` }} />
+                                                </div>
+                                            </div>
+                                        ) : null}
+                                        <button
+                                            type="button"
+                                            onClick={!limitReached ? handleDownload : undefined}
+                                            disabled={downloading || limitReached}
+                                            className={`flex w-full items-center justify-center gap-2 py-4 text-sm font-bold uppercase tracking-wider transition-opacity ${
+                                                limitReached
+                                                    ? 'cursor-not-allowed bg-mf-danger/20 text-mf-danger'
+                                                    : 'bg-mf-ink text-mf-bg hover:bg-mf-accent'
+                                            }`}
+                                        >
+                                            {collectionLoading ? (
+                                                <>
+                                                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-mf-bg border-t-transparent" />
+                                                    {downloadStatus || 'Revealing collection...'}
+                                                </>
+                                            ) : limitReached ? (
+                                                <>
+                                                    <span className="material-symbols-outlined text-xl">block</span>
+                                                    Download limit reached
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span className="material-symbols-outlined icon-filled text-lg" aria-hidden>
+                                                        folder_open
+                                                    </span>
+                                                    Reveal files
+                                                </>
+                                            )}
+                                        </button>
+                                    </>
+                                ) : (
+                                    <div className="space-y-4">
+                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                            <div>
+                                                <p className="text-sm font-bold text-mf-ink">Collection contents</p>
+                                                <p className="font-mono text-xs text-mf-ink-muted">
+                                                    Download individual files or take the full set sequentially.
+                                                </p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={handleDownloadAll}
+                                                disabled={collectionInteractionLocked}
+                                                className="shrink-0 border border-mf-accent bg-mf-accent px-4 py-2.5 font-mono text-xs font-medium uppercase tracking-wider text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                                            >
+                                                {collectionDownloadAll ? 'Downloading…' : 'Download all'}
+                                            </button>
+                                        </div>
 
-                                <div className="space-y-2">
-                                    {collectionManifest.files.map((item) => (
-                                        <CollectionListItem
-                                            key={item.itemId}
-                                            item={item}
-                                            displayName={duplicateNameLabels[item.itemId] || item.name}
-                                            downloading={activeCollectionItemId === item.itemId}
-                                            disabled={collectionInteractionLocked}
-                                            onDownload={async () => {
-                                                if (collectionInteractionLocked) {
-                                                    return
-                                                }
-                                                try {
-                                                    setDownloading(true)
-                                                    await handleCollectionItemDownload(item)
-                                                    setDownloadComplete(true)
-                                                } catch (err) {
-                                                    console.error('Item download error:', err)
-                                                    alert(`Download failed: ${err.message}`)
-                                                } finally {
-                                                    setDownloading(false)
-                                                    setDownloadProgress(0)
-                                                    setActiveCollectionItemId('')
-                                                    terminateWorkerPool()
-                                                }
-                                            }}
-                                        />
-                                    ))}
-                                </div>
+                                        <div className="space-y-2">
+                                            {collectionManifest.files.map((item) => (
+                                                <CollectionListItem
+                                                    key={item.itemId}
+                                                    item={item}
+                                                    displayName={duplicateNameLabels[item.itemId] || item.name}
+                                                    downloading={activeCollectionItemId === item.itemId}
+                                                    disabled={collectionInteractionLocked}
+                                                    onDownload={async () => {
+                                                        if (collectionInteractionLocked) {
+                                                            return
+                                                        }
+                                                        try {
+                                                            setDownloading(true)
+                                                            await handleCollectionItemDownload(item)
+                                                            setDownloadComplete(true)
+                                                        } catch (err) {
+                                                            console.error('Item download error:', err)
+                                                            alert(`Download failed: ${err.message}`)
+                                                        } finally {
+                                                            setDownloading(false)
+                                                            setDownloadProgress(0)
+                                                            setActiveCollectionItemId('')
+                                                            terminateWorkerPool()
+                                                        }
+                                                    }}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
 
-                        <p className="text-center font-mono text-[11px] leading-relaxed text-mf-ink-muted">
-                            File names stay private until the encrypted manifest is revealed with the transfer key in your URL.
-                        </p>
+                        <div className="flex flex-wrap items-center justify-between gap-4 border-t border-mf-border bg-mf-bg px-6 py-4 font-mono text-[10px] uppercase tracking-wider text-mf-ink-muted">
+                            <span className="flex items-center gap-2">Client-side decryption</span>
+                            <span className="flex items-center gap-1.5 text-mf-success">
+                                <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
+                                    <polyline points="20 6 9 17 4 12" />
+                                </svg>
+                                Key never sent to server
+                            </span>
+                        </div>
                     </MfCornerCard>
+
+                    <div className="mt-6 flex items-start gap-3.5 border border-mf-border bg-mf-card p-4 md:p-5">
+                        <span className="material-symbols-outlined shrink-0 text-mf-warn text-lg">info</span>
+                        <p className="font-mono text-[10.5px] leading-relaxed text-mf-ink-muted">
+                            <strong className="font-medium text-mf-ink">How decryption works:</strong> Your browser fetches encrypted data from our servers.
+                            The decryption key lives only in the <code className="bg-mf-border/60 px-1">#fragment</code> of this URL. File names stay hidden
+                            until you reveal the list with the transfer key. Decryption runs entirely client-side.
+                        </p>
+                    </div>
+
+                    <div className="mt-8 flex flex-col items-center gap-4">
+                        <button
+                            type="button"
+                            onClick={() => setShowQR(!showQR)}
+                            className="inline-flex items-center gap-2 border border-mf-border bg-mf-card px-5 py-2.5 font-mono text-xs text-mf-ink-muted transition-colors hover:border-mf-accent hover:text-mf-accent"
+                        >
+                            <span className="material-symbols-outlined text-lg">qr_code_2</span>
+                            {showQR ? 'Hide QR code' : 'Show QR code'}
+                        </button>
+                        {showQR ? (
+                            <div className="w-full border border-mf-border bg-mf-bg-panel p-6">
+                                <QRCode url={shareUrl} />
+                            </div>
+                        ) : null}
+                    </div>
                 </main>
                 <MfFooter showSendLink />
             </div>
@@ -814,12 +958,21 @@ export default function SharePage() {
                             <p className="break-words text-xl font-bold tracking-tight text-mf-ink md:text-[22px]">{metadata.original_name}</p>
                             <div className="mt-3 flex flex-wrap gap-2">
                                 <span className="inline-flex items-center gap-1.5 border border-mf-border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-mf-ink-muted">
+                                    <span className="material-symbols-outlined text-[14px] leading-none" aria-hidden>
+                                        download
+                                    </span>
                                     {fileSize}
                                 </span>
                                 <span className="inline-flex items-center gap-1.5 border border-mf-border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-mf-ink-muted">
+                                    <span className="material-symbols-outlined text-[14px] leading-none" aria-hidden>
+                                        schedule
+                                    </span>
                                     {timeLeft !== null ? formatTimeLeft(timeLeft) : '—'}
                                 </span>
                                 <span className="inline-flex items-center gap-1.5 border border-mf-border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-mf-ink-muted">
+                                    <span className="material-symbols-outlined text-[14px] leading-none" aria-hidden>
+                                        visibility
+                                    </span>
                                     {downloadsLeftLabel}
                                 </span>
                             </div>
@@ -830,7 +983,9 @@ export default function SharePage() {
                                 onClick={() => navigate('/')}
                                 className="inline-flex items-center justify-center gap-2 border border-mf-border py-2 font-mono text-[10.5px] uppercase tracking-wider text-mf-ink-muted transition-colors hover:border-mf-ink hover:text-mf-ink"
                             >
-                                <span className="material-symbols-outlined text-sm">south</span>
+                                <span className="material-symbols-outlined text-sm" aria-hidden>
+                                    upload
+                                </span>
                                 Send a file
                             </button>
                         </div>
@@ -838,23 +993,38 @@ export default function SharePage() {
 
                     <div className="grid grid-cols-1 divide-y divide-mf-border border-b border-mf-border md:grid-cols-3 md:divide-x md:divide-y-0">
                         <div className="px-5 py-4">
-                            <p className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-mf-ink-muted">Encryption</p>
+                            <p className="flex items-center gap-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-mf-ink-muted">
+                                <span className="material-symbols-outlined text-[12px] leading-none" aria-hidden>
+                                    lock
+                                </span>
+                                Encryption
+                            </p>
                             <p className="mt-1 flex items-center gap-2 text-sm font-bold text-mf-ink">
-                                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-mf-success" />
+                                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-mf-success" aria-hidden />
                                 AES-256-GCM
                             </p>
                         </div>
                         <div className="px-5 py-4">
-                            <p className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-mf-ink-muted">Key location</p>
+                            <p className="flex items-center gap-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-mf-ink-muted">
+                                <span className="material-symbols-outlined text-[12px] leading-none" aria-hidden>
+                                    vpn_key
+                                </span>
+                                Key location
+                            </p>
                             <p className="mt-1 flex items-center gap-2 text-sm font-bold text-mf-ink">
-                                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-mf-success" />
+                                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-mf-success" aria-hidden />
                                 URL fragment only
                             </p>
                         </div>
                         <div className="px-5 py-4">
-                            <p className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-mf-ink-muted">Server sees</p>
+                            <p className="flex items-center gap-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-mf-ink-muted">
+                                <span className="material-symbols-outlined text-[12px] leading-none" aria-hidden>
+                                    cloud
+                                </span>
+                                Server sees
+                            </p>
                             <p className="mt-1 flex items-center gap-2 text-sm font-bold text-mf-ink">
-                                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-mf-success" />
+                                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-mf-success" aria-hidden />
                                 Ciphertext only
                             </p>
                         </div>
@@ -863,7 +1033,12 @@ export default function SharePage() {
                     {!expired ? (
                         <div className="border-b border-mf-border px-6 py-5">
                             <div className="mb-2 flex justify-between font-mono text-[10px] uppercase tracking-wider text-mf-ink-muted">
-                                <span>Link expires in</span>
+                                <span className="inline-flex items-center gap-1.5">
+                                    <span className="material-symbols-outlined text-[13px] leading-none" aria-hidden>
+                                        schedule
+                                    </span>
+                                    Link expires in
+                                </span>
                                 <span className={timeLeft !== null && timeLeft < 3600000 ? 'text-mf-warn' : 'text-mf-ink'}>
                                     {timeLeft !== null ? formatCountdownHMS(timeLeft) : '—'}
                                 </span>
@@ -873,6 +1048,13 @@ export default function SharePage() {
                                     className="absolute left-0 top-0 h-full bg-gradient-to-r from-mf-success to-mf-warn transition-all duration-500"
                                     style={{ width: `${singleExpiryFillPct}%` }}
                                 />
+                                {singleExpiryFillPct > 0 && singleExpiryFillPct < 100 ? (
+                                    <div
+                                        className="pointer-events-none absolute top-1/2 z-[1] h-2 w-px -translate-x-1/2 -translate-y-1/2 bg-mf-ink"
+                                        style={{ left: `${singleExpiryFillPct}%` }}
+                                        aria-hidden
+                                    />
+                                ) : null}
                             </div>
                         </div>
                     ) : null}
@@ -934,7 +1116,9 @@ export default function SharePage() {
                                         </>
                                     ) : (
                                         <>
-                                            <span className="material-symbols-outlined text-lg">download</span>
+                                            <span className="material-symbols-outlined icon-filled text-lg" aria-hidden>
+                                                download
+                                            </span>
                                             Decrypt &amp; Download
                                         </>
                                     )}

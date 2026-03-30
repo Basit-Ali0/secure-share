@@ -37,7 +37,6 @@ describe('SharePage', () => {
     beforeEach(() => {
         vi.clearAllMocks()
         vi.restoreAllMocks()
-        vi.spyOn(window, 'alert').mockImplementation(() => {})
     })
 
     it('reveals collection contents for multi-file shares', async () => {
@@ -213,7 +212,7 @@ describe('SharePage', () => {
         fireEvent.click(await screen.findByRole('button', { name: /decrypt & download/i }))
 
         await waitFor(() => {
-            expect(window.alert).toHaveBeenCalledWith('Download failed: Download limit reached')
+            expect(screen.getByRole('alert')).toHaveTextContent('Download failed: Download limit reached')
         })
     })
 

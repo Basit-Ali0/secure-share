@@ -1,26 +1,65 @@
-import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react'
+import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { popInProps, transitionSec } from '../../lib/motionPresets.js'
 
+const FOCUSABLE_SELECTOR = [
+    'button:not([disabled])',
+    'a[href]:not([disabled])',
+    'input:not([disabled])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    'audio',
+    'video',
+    'iframe',
+    '[tabindex]:not([tabindex="-1"])',
+].join(',')
+
+function listTabbableElements(container) {
+    return [...container.querySelectorAll(FOCUSABLE_SELECTOR)].filter(
+        (el) => el.getAttribute('aria-hidden') !== 'true'
+    )
+}
+
 export default function FilePreviewModal({ file, onClose }) {
     const prefersReducedMotion = useReducedMotion()
-    const [previewUrl, setPreviewUrl] = useState(null)
-    const [fileType, setFileType] = useState(null)
+    const [preview, setPreview] = useState({ url: null, type: null })
     const closeButtonRef = useRef(null)
     const previousFocusRef = useRef(null)
-
-    const handleKeyDown = useCallback((e) => {
-        if (e.key === 'Escape') onClose()
-    }, [onClose])
-
-    useEffect(() => {
-        document.addEventListener('keydown', handleKeyDown)
-        return () => document.removeEventListener('keydown', handleKeyDown)
-    }, [handleKeyDown])
+    const restoreTargetCapturedRef = useRef(false)
+    const overlayRef = useRef(null)
 
     useLayoutEffect(() => {
         if (!file) return undefined
-        previousFocusRef.current = document.activeElement
+
+        const type = file.type.startsWith('image/')
+            ? 'image'
+            : file.type === 'application/pdf'
+              ? 'pdf'
+              : file.type.startsWith('video/')
+                ? 'video'
+                : file.type.startsWith('audio/')
+                  ? 'audio'
+                  : 'unsupported'
+
+        let objectUrl = null
+        if (type !== 'unsupported') {
+            objectUrl = URL.createObjectURL(file)
+        }
+        setPreview({ url: objectUrl, type })
+
+        return () => {
+            if (objectUrl) {
+                URL.revokeObjectURL(objectUrl)
+            }
+        }
+    }, [file])
+
+    useLayoutEffect(() => {
+        if (!file) return undefined
+        if (!restoreTargetCapturedRef.current) {
+            previousFocusRef.current = document.activeElement
+            restoreTargetCapturedRef.current = true
+        }
         const id = requestAnimationFrame(() => {
             closeButtonRef.current?.focus()
         })
@@ -41,36 +80,61 @@ export default function FilePreviewModal({ file, onClose }) {
     }, [])
 
     useEffect(() => {
-        if (!file) return
+        if (!file) return undefined
 
-        // Determine file type and create preview URL in one pass
-        const type = file.type.startsWith('image/') ? 'image'
-            : file.type === 'application/pdf' ? 'pdf'
-                : file.type.startsWith('video/') ? 'video'
-                    : file.type.startsWith('audio/') ? 'audio'
-                        : 'unsupported'
+        const onDocKeyDown = (e) => {
+            const root = overlayRef.current
+            if (!root) return
 
-        setFileType(type)
+            if (e.key === 'Escape') {
+                e.preventDefault()
+                onClose()
+                return
+            }
 
-        let objectUrl = null
-        if (type !== 'unsupported') {
-            objectUrl = URL.createObjectURL(file)
-            setPreviewUrl(objectUrl)
-        }
+            if (e.key !== 'Tab') return
 
-        return () => {
-            if (objectUrl) {
-                URL.revokeObjectURL(objectUrl)
+            const active = document.activeElement
+            if (!root.contains(active)) return
+
+            const focusables = listTabbableElements(root)
+            if (focusables.length === 0) return
+
+            const first = focusables[0]
+            const last = focusables[focusables.length - 1]
+            const idx = focusables.indexOf(active)
+
+            if (idx === -1) {
+                e.preventDefault()
+                first.focus()
+                return
+            }
+
+            if (e.shiftKey) {
+                if (active === first) {
+                    e.preventDefault()
+                    last.focus()
+                }
+            } else if (active === last) {
+                e.preventDefault()
+                first.focus()
             }
         }
-    }, [file])
+
+        document.addEventListener('keydown', onDocKeyDown, true)
+        return () => document.removeEventListener('keydown', onDocKeyDown, true)
+    }, [file, onClose])
 
     if (!file) return null
 
-    const { exit: _panelExit, ...panelMotion } = popInProps(prefersReducedMotion)
+    const panelMotion = { ...popInProps(prefersReducedMotion) }
+    delete panelMotion.exit
+
+    const { url: previewUrl, type: fileType } = preview
 
     return (
         <motion.div
+            ref={overlayRef}
             className="fixed inset-0 z-50 flex items-center justify-center bg-mf-ink/80 p-4 backdrop-blur-sm"
             onClick={onClose}
             role="dialog"
@@ -107,33 +171,33 @@ export default function FilePreviewModal({ file, onClose }) {
                     </div>
 
                     <div className="flex min-h-[400px] items-center justify-center rounded-xl border border-mf-border bg-mf-bg-panel p-4">
-                        {fileType === 'image' && (
+                        {fileType == null ? (
+                            <p className="font-mono text-sm text-mf-ink-muted">Loading preview…</p>
+                        ) : null}
+
+                        {fileType === 'image' && previewUrl && (
                             <img
                                 src={previewUrl}
                                 alt={file.name}
-                                className="max-w-full max-h-[600px] object-contain rounded"
+                                className="max-h-[600px] max-w-full rounded object-contain"
                             />
                         )}
 
-                        {fileType === 'pdf' && (
+                        {fileType === 'pdf' && previewUrl && (
                             <iframe
                                 src={previewUrl}
-                                className="w-full h-[600px] rounded bg-white"
+                                className="h-[600px] w-full rounded bg-white"
                                 title="PDF Preview"
                             />
                         )}
 
-                        {fileType === 'video' && (
-                            <video
-                                src={previewUrl}
-                                controls
-                                className="max-w-full max-h-[600px] rounded"
-                            >
+                        {fileType === 'video' && previewUrl && (
+                            <video src={previewUrl} controls className="max-h-[600px] max-w-full rounded">
                                 Your browser does not support video preview.
                             </video>
                         )}
 
-                        {fileType === 'audio' && (
+                        {fileType === 'audio' && previewUrl && (
                             <div className="flex flex-col items-center gap-4">
                                 <span className="material-symbols-outlined text-6xl text-mf-ink-muted">volume_up</span>
                                 <audio src={previewUrl} controls className="w-full max-w-md" />
@@ -146,6 +210,7 @@ export default function FilePreviewModal({ file, onClose }) {
                                 <p>Preview not available for this file type</p>
                             </div>
                         )}
+
                     </div>
                 </div>
             </motion.div>

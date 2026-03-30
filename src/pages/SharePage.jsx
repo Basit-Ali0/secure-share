@@ -38,6 +38,24 @@ function ShareHelmet({ title, description, url }) {
     )
 }
 
+function ShareDownloadErrorBanner({ message, onDismiss }) {
+    if (!message) return null
+    return (
+        <div role="alert" className="border-b border-mf-danger/45 bg-mf-danger/10 px-6 py-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                <p className="flex-1 font-mono text-[11px] leading-relaxed text-mf-danger">{message}</p>
+                <button
+                    type="button"
+                    onClick={onDismiss}
+                    className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-mf-ink-muted underline decoration-mf-border underline-offset-2 hover:text-mf-ink"
+                >
+                    Dismiss
+                </button>
+            </div>
+        </div>
+    )
+}
+
 function formatCountdownHMS(ms) {
     if (ms <= 0) return '00:00:00'
     const s = Math.floor(ms / 1000)
@@ -120,6 +138,7 @@ export default function SharePage() {
     const [collectionDownloadAll, setCollectionDownloadAll] = useState(false)
     const [activeCollectionItemId, setActiveCollectionItemId] = useState('')
     const [expiryBaselineMs, setExpiryBaselineMs] = useState(null)
+    const [shareActionError, setShareActionError] = useState('')
     const prefersReducedMotion = useReducedMotion()
 
     const downloadCount = metadata?.download_count || 0
@@ -139,6 +158,10 @@ export default function SharePage() {
 
     useEffect(() => {
         setExpiryBaselineMs(null)
+    }, [identifier])
+
+    useEffect(() => {
+        setShareActionError('')
     }, [identifier])
 
     useEffect(() => {
@@ -353,6 +376,7 @@ export default function SharePage() {
 
     async function handleDownload() {
         try {
+            setShareActionError('')
             setDownloading(true)
             setDownloadProgress(0)
             setDownloadStatus(isCollection ? 'Revealing collection...' : 'Authorizing...')
@@ -446,7 +470,7 @@ export default function SharePage() {
         } catch (err) {
             console.error('Download error:', err)
             if (err.message !== 'Download cancelled') {
-                alert(`Download failed: ${err.message}`)
+                setShareActionError(`Download failed: ${err.message}`)
             }
             setDownloadProgress(0)
         } finally {
@@ -462,6 +486,7 @@ export default function SharePage() {
         }
 
         try {
+            setShareActionError('')
             setCollectionDownloadAll(true)
             setDownloading(true)
             setDownloadStatus('Preparing collection download...')
@@ -474,7 +499,7 @@ export default function SharePage() {
             setDownloadStatus('Collection download complete')
         } catch (err) {
             console.error('Collection download error:', err)
-            alert(`Download failed: ${err.message}`)
+            setShareActionError(`Download failed: ${err.message}`)
         } finally {
             setCollectionDownloadAll(false)
             setActiveCollectionItemId('')
@@ -703,6 +728,7 @@ export default function SharePage() {
                     </h1>
 
                     <MfCornerCard className="overflow-hidden">
+                        <ShareDownloadErrorBanner message={shareActionError} onDismiss={() => setShareActionError('')} />
                         <div className="grid grid-cols-1 border-b border-mf-border md:grid-cols-[90px_1fr_auto] md:items-stretch">
                             <div className="flex flex-col items-center justify-center gap-1.5 bg-mf-accent py-8 md:py-0">
                                 <span className="material-symbols-outlined text-[28px] text-white/90 icon-filled" aria-hidden>
@@ -936,12 +962,13 @@ export default function SharePage() {
                                                                 return
                                                             }
                                                             try {
+                                                                setShareActionError('')
                                                                 setDownloading(true)
                                                                 await handleCollectionItemDownload(item)
                                                                 setDownloadComplete(true)
                                                             } catch (err) {
                                                                 console.error('Item download error:', err)
-                                                                alert(`Download failed: ${err.message}`)
+                                                                setShareActionError(`Download failed: ${err.message}`)
                                                             } finally {
                                                                 setDownloading(false)
                                                                 setDownloadProgress(0)
@@ -1031,6 +1058,7 @@ export default function SharePage() {
                 </h1>
 
                 <MfCornerCard className="overflow-hidden">
+                    <ShareDownloadErrorBanner message={shareActionError} onDismiss={() => setShareActionError('')} />
                     <div className="grid grid-cols-1 border-b border-mf-border md:grid-cols-[90px_1fr_auto] md:items-stretch">
                         <div className="flex flex-col items-center justify-center gap-1.5 bg-mf-accent py-8 md:py-0">
                             <svg className="text-white/90" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>

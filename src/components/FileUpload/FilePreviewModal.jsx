@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
+import { popInProps, transitionSec } from '../../lib/motionPresets.js'
 
 export default function FilePreviewModal({ file, onClose }) {
+    const prefersReducedMotion = useReducedMotion()
     const [previewUrl, setPreviewUrl] = useState(null)
     const [fileType, setFileType] = useState(null)
 
@@ -42,16 +45,20 @@ export default function FilePreviewModal({ file, onClose }) {
     if (!file) return null
 
     return (
-        <div
+        <motion.div
             className="fixed inset-0 z-50 flex items-center justify-center bg-mf-ink/80 p-4 backdrop-blur-sm"
             onClick={onClose}
             role="dialog"
             aria-modal="true"
             aria-label="File preview"
+            initial={prefersReducedMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={transitionSec(0.22)}
         >
-            <div
+            <motion.div
                 className="max-h-[90vh] w-full max-w-4xl overflow-auto border border-mf-border bg-mf-card"
                 onClick={(e) => e.stopPropagation()}
+                {...popInProps(prefersReducedMotion)}
             >
                 <div className="p-6">
                     <div className="mb-4 flex items-start justify-between">
@@ -111,7 +118,7 @@ export default function FilePreviewModal({ file, onClose }) {
                         )}
                     </div>
                 </div>
-            </div>
-        </div>
+            </motion.div>
+        </motion.div>
     )
 }

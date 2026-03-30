@@ -18,6 +18,15 @@ import {
 import { formatFileSize } from '../utils/fileUtils'
 import { buildCanonicalUrl, DEFAULT_DESCRIPTION, DEFAULT_TITLE, OG_IMAGE_URL, SITE_NAME } from '../lib/siteConfig'
 import { trackEvent } from '../lib/analytics'
+import {
+    fadeUpProps,
+    getNestedStaggerGrid,
+    getStaggerContainer,
+    getStaggerItem,
+    popInProps,
+    tapProps,
+    transitionSec,
+} from '../lib/motionPresets.js'
 
 function MfToggle({ on, onToggle, disabled = false, ariaLabel }) {
     return (
@@ -89,39 +98,50 @@ function formatCollectionCount(count) {
     return `${count} file${count === 1 ? '' : 's'}`
 }
 
-function HowItWorks() {
+function HowItWorks({ reducedMotion }) {
+    const container = getStaggerContainer(reducedMotion, 0.12, 0.06)
+    const item = getStaggerItem(reducedMotion, 14)
+    const gridStagger = getNestedStaggerGrid(reducedMotion, 0.09)
+    const steps = [
+        {
+            n: '01',
+            t: 'Select & Configure',
+            d: 'Drop your file and set expiry rules, password protection, and download limits — all before anything leaves your device.',
+        },
+        {
+            n: '02',
+            t: 'Client-Side Encrypt',
+            d: 'AES-256 encryption runs entirely in your browser. The decryption key never leaves your machine — we only receive ciphertext.',
+        },
+        {
+            n: '03',
+            t: 'Share the Link',
+            d: 'Send the generated link to your recipient. The key travels in the URL fragment — structurally invisible to servers and logs.',
+        },
+    ]
+
     return (
-        <section className="mf-fade-up mt-16" style={{ animationDelay: '0.15s' }}>
-            <div className="mb-9 flex items-center gap-3.5 font-mono text-[10.5px] uppercase tracking-[0.14em] text-mf-ink-muted">
+        <motion.section className="mt-16" {...container}>
+            <motion.div
+                className="mb-9 flex items-center gap-3.5 font-mono text-[10.5px] uppercase tracking-[0.14em] text-mf-ink-muted"
+                variants={item.variants}
+            >
                 <span>How it works</span>
                 <span className="h-px flex-1 bg-mf-border" />
-            </div>
-            <div className="grid grid-cols-1 gap-px bg-mf-border md:grid-cols-3">
-                {[
-                    {
-                        n: '01',
-                        t: 'Select & Configure',
-                        d: 'Drop your file and set expiry rules, password protection, and download limits — all before anything leaves your device.',
-                    },
-                    {
-                        n: '02',
-                        t: 'Client-Side Encrypt',
-                        d: 'AES-256 encryption runs entirely in your browser. The decryption key never leaves your machine — we only receive ciphertext.',
-                    },
-                    {
-                        n: '03',
-                        t: 'Share the Link',
-                        d: 'Send the generated link to your recipient. The key travels in the URL fragment — structurally invisible to servers and logs.',
-                    },
-                ].map((step) => (
-                    <div key={step.n} className="bg-mf-bg px-6 py-7 md:py-9">
+            </motion.div>
+            <motion.div
+                className="grid grid-cols-1 gap-px bg-mf-border md:grid-cols-3"
+                variants={gridStagger.variants}
+            >
+                {steps.map((step) => (
+                    <motion.div key={step.n} className="bg-mf-bg px-6 py-7 md:py-9" variants={item.variants}>
                         <div className="mb-3.5 text-[42px] font-extrabold leading-none tracking-tight text-mf-border">{step.n}</div>
                         <h3 className="mb-2 text-sm font-bold tracking-tight text-mf-ink">{step.t}</h3>
                         <p className="font-mono text-[10.5px] leading-relaxed tracking-wide text-mf-ink-muted">{step.d}</p>
-                    </div>
+                    </motion.div>
                 ))}
-            </div>
-        </section>
+            </motion.div>
+        </motion.section>
     )
 }
 
@@ -450,23 +470,35 @@ export default function HomePage() {
             <MfNav />
 
             <main className={`mx-auto px-4 pb-12 pt-10 md:px-8 ${wideCard ? 'max-w-2xl' : 'max-w-[680px]'}`}>
-                <div className="mf-fade-up mb-10 text-center md:mb-14">
-                    <div className="mb-5 inline-flex items-center gap-2.5 font-mono text-[10.5px] uppercase tracking-[0.14em] text-mf-ink-muted">
+                <motion.div className="mb-10 text-center md:mb-14" {...getStaggerContainer(prefersReducedMotion, 0.09, 0.04)}>
+                    <motion.div
+                        className="mb-5 inline-flex items-center gap-2.5 font-mono text-[10.5px] uppercase tracking-[0.14em] text-mf-ink-muted"
+                        variants={getStaggerItem(prefersReducedMotion, 10).variants}
+                    >
                         <span className="h-px w-[22px] bg-mf-accent" />
                         Secure File Transfer
                         <span className="h-px w-[22px] bg-mf-accent" />
-                    </div>
-                    <h1 className="mb-4 text-[clamp(2.5rem,7vw,4.5rem)] font-extrabold leading-[1.02] tracking-tight">
+                    </motion.div>
+                    <motion.h1
+                        className="mb-4 text-[clamp(2.5rem,7vw,4.5rem)] font-extrabold leading-[1.02] tracking-tight"
+                        variants={getStaggerItem(prefersReducedMotion, 18).variants}
+                    >
                         Masked
                         <br />
                         <span className="text-mf-accent">Transfer.</span>
-                    </h1>
-                    <p className="mx-auto mb-7 max-w-md font-mono text-xs leading-relaxed tracking-wide text-mf-ink-muted">
+                    </motion.h1>
+                    <motion.p
+                        className="mx-auto mb-7 max-w-md font-mono text-xs leading-relaxed tracking-wide text-mf-ink-muted"
+                        variants={getStaggerItem(prefersReducedMotion, 12).variants}
+                    >
                         Client-side encrypted. Zero-knowledge architecture.
                         <br />
                         Your files never touch our servers in plaintext.
-                    </p>
-                    <div className="inline-flex flex-wrap items-center justify-center gap-2.5 border border-mf-border bg-mf-card px-4 py-2.5 font-mono text-[10px] tracking-wide text-mf-ink">
+                    </motion.p>
+                    <motion.div
+                        className="inline-flex flex-wrap items-center justify-center gap-2.5 border border-mf-border bg-mf-card px-4 py-2.5 font-mono text-[10px] tracking-wide text-mf-ink"
+                        variants={getStaggerItem(prefersReducedMotion, 10).variants}
+                    >
                         <span className="relative flex h-2 w-2 shrink-0 rounded-full bg-mf-success">
                             <span className="absolute inset-0 animate-ping rounded-full bg-mf-success/40" />
                         </span>
@@ -475,8 +507,8 @@ export default function HomePage() {
                         <span>END-TO-END</span>
                         <span className="h-3 w-px bg-mf-border" />
                         <span>ZERO-KNOWLEDGE</span>
-                    </div>
-                </div>
+                    </motion.div>
+                </motion.div>
 
                 <motion.div
                     layout
@@ -484,7 +516,8 @@ export default function HomePage() {
                     className="w-full"
                 >
                     {!uploading && !shareUrl && (
-                        <MfCornerCard className="mf-fade-up overflow-hidden" style={{ animationDelay: '0.08s' }}>
+                        <motion.div {...fadeUpProps(prefersReducedMotion, 14, 0.18)}>
+                            <MfCornerCard className="overflow-hidden">
                             <AnimatePresence initial={false} mode="wait">
                                 {selectedEntries.length === 0 ? (
                                     <motion.div
@@ -699,14 +732,15 @@ export default function HomePage() {
                                         ) : null}
 
                                         <div className="p-4 sm:p-5">
-                                            <button
+                                            <motion.button
                                                 type="button"
                                                 onClick={handleUpload}
                                                 className="flex w-full items-center justify-center gap-2 bg-mf-accent py-4 text-sm font-bold uppercase tracking-wider text-white transition-opacity hover:opacity-90"
+                                                {...tapProps(prefersReducedMotion)}
                                             >
                                                 <span className="material-symbols-outlined icon-filled text-lg">rocket_launch</span>
                                                 Secure &amp; Send
-                                            </button>
+                                            </motion.button>
                                             <div className="mt-4">
                                                 <TrustStrip icon="verified_user" text="Encrypted in your browser before anything leaves your device." />
                                             </div>
@@ -714,11 +748,13 @@ export default function HomePage() {
                                     </motion.div>
                                 )}
                             </AnimatePresence>
-                        </MfCornerCard>
+                            </MfCornerCard>
+                        </motion.div>
                     )}
 
                     {uploading && (
-                        <MfCornerCard>
+                        <motion.div {...fadeUpProps(prefersReducedMotion, 12, 0)}>
+                            <MfCornerCard>
                             <UploadProgress
                                 progress={uploadProgress}
                                 fileName={uploadDisplayName || selectionTitle}
@@ -727,11 +763,14 @@ export default function HomePage() {
                                 stage={uploadStage}
                                 contextLabel={uploadContextLabel}
                             />
-                        </MfCornerCard>
+                            </MfCornerCard>
+                        </motion.div>
                     )}
 
-                    {shareUrl && (
-                        <MfCornerCard className="space-y-5 p-5 sm:p-6">
+                    <AnimatePresence mode="wait">
+                        {shareUrl ? (
+                            <motion.div key="share-ready" {...popInProps(prefersReducedMotion)}>
+                                <MfCornerCard className="space-y-5 p-5 sm:p-6">
                             <div className="space-y-3 text-center">
                                 <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-mf-success/15 text-mf-success">
                                     <span className="material-symbols-outlined text-3xl icon-filled">check_circle</span>
@@ -748,13 +787,16 @@ export default function HomePage() {
                                 <p className="mb-2 font-mono text-[9.5px] uppercase tracking-[0.12em] text-mf-accent">Secure link ready</p>
                                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                                     <p className="flex-1 break-all font-mono text-xs text-mf-ink">{shareUrl}</p>
-                                    <button
+                                    <motion.button
                                         type="button"
                                         onClick={handleCopy}
                                         className="shrink-0 bg-mf-accent px-4 py-2 font-mono text-[10px] font-medium uppercase tracking-wider text-white transition-opacity hover:opacity-90"
+                                        {...tapProps(prefersReducedMotion)}
+                                        animate={copied && !prefersReducedMotion ? { scale: [1, 1.04, 1] } : {}}
+                                        transition={{ duration: 0.35 }}
                                     >
                                         {copied ? 'Copied ✓' : 'Copy'}
-                                    </button>
+                                    </motion.button>
                                 </div>
                             </div>
 
@@ -782,21 +824,23 @@ export default function HomePage() {
                             </div>
 
                             <div className="flex flex-col gap-3 sm:flex-row">
-                                <button
+                                <motion.button
                                     type="button"
                                     onClick={() => setShowQR((v) => !v)}
                                     className="flex flex-1 items-center justify-center gap-2 border border-mf-border bg-mf-bg-panel py-3 font-mono text-sm text-mf-ink transition-colors hover:border-mf-ink"
+                                    {...tapProps(prefersReducedMotion)}
                                 >
                                     <span className="material-symbols-outlined text-lg">qr_code_2</span>
                                     {showQR ? 'Hide QR' : 'Show QR'}
-                                </button>
-                                <button
+                                </motion.button>
+                                <motion.button
                                     type="button"
                                     onClick={handleUploadAnother}
                                     className="flex flex-1 items-center justify-center gap-2 border border-mf-border bg-mf-bg-panel py-3 font-mono text-sm text-mf-ink transition-colors hover:border-mf-ink"
+                                    {...tapProps(prefersReducedMotion)}
                                 >
                                     Upload another
-                                </button>
+                                </motion.button>
                             </div>
 
                             <AnimatePresence initial={false}>
@@ -814,11 +858,13 @@ export default function HomePage() {
                             </AnimatePresence>
 
                             <TrustStrip icon="key" text="Zero-knowledge: the decryption key remains inside the shared URL." />
-                        </MfCornerCard>
-                    )}
+                                </MfCornerCard>
+                            </motion.div>
+                        ) : null}
+                    </AnimatePresence>
                 </motion.div>
 
-                {!uploading && !shareUrl ? <HowItWorks /> : null}
+                {!uploading && !shareUrl ? <HowItWorks reducedMotion={prefersReducedMotion} /> : null}
             </main>
 
             <MfFooter />

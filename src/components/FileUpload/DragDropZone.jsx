@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024 // 5GB
 
@@ -10,6 +11,7 @@ function normalizeEntries(fileList) {
 }
 
 export default function DragDropZone({ onFileSelect }) {
+    const prefersReducedMotion = useReducedMotion()
     const [isDragging, setIsDragging] = useState(false)
     const fileInputRef = useRef(null)
     const folderInputRef = useRef(null)
@@ -78,12 +80,16 @@ export default function DragDropZone({ onFileSelect }) {
     }
 
     return (
-        <div
+        <motion.div
             onDragEnter={handleDragEnter}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             onClick={handleClick}
+            animate={{
+                scale: !prefersReducedMotion && isDragging ? 1.014 : 1,
+            }}
+            transition={{ type: 'spring', stiffness: 420, damping: 28 }}
             className={`cursor-pointer border-b border-mf-border px-6 py-12 text-center transition-colors sm:px-10 ${
                 isDragging ? 'bg-mf-accent/10' : 'hover:bg-mf-accent/10'
             }`}
@@ -142,6 +148,6 @@ export default function DragDropZone({ onFileSelect }) {
             >
                 Choose folder
             </button>
-        </div>
+        </motion.div>
     )
 }

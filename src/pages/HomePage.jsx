@@ -19,18 +19,21 @@ import { formatFileSize } from '../utils/fileUtils'
 import { buildCanonicalUrl, DEFAULT_DESCRIPTION, DEFAULT_TITLE, OG_IMAGE_URL, SITE_NAME } from '../lib/siteConfig'
 import { trackEvent } from '../lib/analytics'
 
-function SurfaceLabel({ icon, title, description, trailing }) {
+function MfToggle({ on, onToggle, disabled = false, ariaLabel }) {
     return (
-        <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-                <span className="material-symbols-outlined text-[18px] text-mf-accent">{icon}</span>
-                <div>
-                    <p className="text-sm font-bold text-mf-ink">{title}</p>
-                    {description ? <p className="text-xs text-mf-ink-muted">{description}</p> : null}
-                </div>
-            </div>
-            {trailing}
-        </div>
+        <button
+            type="button"
+            role="switch"
+            aria-checked={on}
+            aria-label={ariaLabel}
+            disabled={disabled}
+            onClick={onToggle}
+            className={`relative h-[21px] w-[38px] shrink-0 rounded-full transition-colors disabled:opacity-40 ${on ? 'bg-mf-accent' : 'bg-mf-border'}`}
+        >
+            <span
+                className={`absolute left-[3px] top-[3px] h-[15px] w-[15px] rounded-full bg-mf-card shadow-sm transition-transform ${on ? 'translate-x-[17px]' : ''}`}
+            />
+        </button>
     )
 }
 
@@ -140,7 +143,7 @@ export default function HomePage() {
     const [copied, setCopied] = useState(false)
     const [showPreview, setShowPreview] = useState(false)
     const [showQR, setShowQR] = useState(false)
-    const [showAdvancedProtection, setShowAdvancedProtection] = useState(false)
+    const [passwordProtectOn, setPasswordProtectOn] = useState(false)
     const [selectedExpiry, setSelectedExpiry] = useState(EXPIRY_OPTIONS[2])
     const [maxDownloadsInput, setMaxDownloadsInput] = useState('')
     const [passwordInput, setPasswordInput] = useState('')
@@ -151,7 +154,7 @@ export default function HomePage() {
         setMaxDownloadsInput('')
         setPasswordInput('')
         setConfirmPasswordInput('')
-        setShowAdvancedProtection(false)
+        setPasswordProtectOn(false)
         setShowPreview(false)
         setUploadStage('')
         setUploadStatus('')
@@ -168,13 +171,20 @@ export default function HomePage() {
         setCopied(false)
         setShowQR(false)
         setShowPreview(false)
-        setShowAdvancedProtection(false)
+        setPasswordProtectOn(false)
     }
 
     const clearSelectedFile = () => {
         setSelectedEntries([])
-        setShowAdvancedProtection(false)
+        setPasswordProtectOn(false)
         setShowPreview(false)
+    }
+
+    const removeSelectedEntryAt = (index) => {
+        setSelectedEntries((prev) => prev.filter((_, i) => i !== index))
+        setShareUrl(null)
+        setCopied(false)
+        setShowQR(false)
     }
 
     const handleUploadAnother = () => {
@@ -198,6 +208,36 @@ export default function HomePage() {
             ? [formatFileSize(selectedFile.size), fileTypeLabel(selectedFile)]
             : []
 
+    function parsePositiveDownloadCount(value) {
+        if (value == null || String(value).trim() === '') return 0
+        const n = parseInt(String(value).trim(), 10)
+        return Number.isFinite(n) && n > 0 ? n : 0
+    }
+
+    const downloadStepperValue = parsePositiveDownloadCount(maxDownloadsInput)
+
+    function handlePasswordProtectToggle() {
+        setPasswordProtectOn((prev) => {
+            if (prev) {
+                setPasswordInput('')
+                setConfirmPasswordInput('')
+            }
+            return !prev
+        })
+    }
+
+    function adjustDownloadLimit(delta) {
+        const cur = parsePositiveDownloadCount(maxDownloadsInput)
+        if (delta < 0) {
+            if (cur <= 1) setMaxDownloadsInput('')
+            else setMaxDownloadsInput(String(cur - 1))
+        } else if (cur === 0) {
+            setMaxDownloadsInput('1')
+        } else {
+            setMaxDownloadsInput(String(Math.min(cur + 1, 99)))
+        }
+    }
+
     const handleUpload = async () => {
         if (selectedEntries.length === 0) return
 
@@ -205,8 +245,8 @@ export default function HomePage() {
             const trimmedMaxDownloads = maxDownloadsInput.trim()
             const hasDownloadLimit = trimmedMaxDownloads.length > 0
             const maxDownloads = hasDownloadLimit ? Number(trimmedMaxDownloads) : null
-            const normalizedPassword = passwordInput.trim()
-            const normalizedConfirmPassword = confirmPasswordInput.trim()
+            const normalizedPassword = passwordProtectOn ? passwordInput.trim() : ''
+            const normalizedConfirmPassword = passwordProtectOn ? confirmPasswordInput.trim() : ''
 
             if (hasDownloadLimit && !/^[1-9]\d*$/.test(trimmedMaxDownloads)) {
                 throw new Error('Download limit must be a whole number greater than 0')
@@ -482,23 +522,13 @@ export default function HomePage() {
                                                             <span key={chip}>{chip}</span>
                                                         ))}
                                                     </div>
-                                                    {isCollection ? (
-                                                        <div className="mt-2 space-y-0.5 font-mono text-[10px] text-mf-ink-muted">
-                                                            {selectedEntries.slice(0, 3).map((entry) => (
-                                                                <p key={entry.relativePath} className="truncate">{entry.relativePath}</p>
-                                                            ))}
-                                                            {selectedEntries.length > 3 ? (
-                                                                <p className="text-mf-accent">and {selectedEntries.length - 3} more…</p>
-                                                            ) : null}
-                                                        </div>
-                                                    ) : null}
                                                 </div>
                                             </div>
                                             <button
                                                 type="button"
                                                 onClick={clearSelectedFile}
                                                 className="shrink-0 font-mono text-xs text-mf-ink-muted transition-colors hover:text-mf-danger"
-                                                aria-label="Remove file"
+                                                aria-label={isCollection ? 'Remove all files' : 'Remove file'}
                                             >
                                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
                                                     <line x1="18" y1="6" x2="6" y2="18" />
@@ -507,104 +537,166 @@ export default function HomePage() {
                                             </button>
                                         </div>
 
-                                        <div className="grid border-b border-mf-border md:grid-cols-2">
-                                            <div className="flex items-center justify-between gap-3 border-b border-mf-border px-4 py-4 md:border-b-0 md:border-r">
-                                                <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-mf-ink-muted">Expires after</span>
+                                        {isCollection ? (
+                                            <div className="border-b border-mf-border bg-mf-bg-panel px-4 py-4 sm:px-5">
+                                                <div className="mb-3 flex items-center justify-between gap-2">
+                                                    <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-mf-ink-muted">
+                                                        Files in this transfer
+                                                    </p>
+                                                    <span className="font-mono text-[10px] text-mf-ink-muted">
+                                                        {selectedEntries.length} total
+                                                    </span>
+                                                </div>
+                                                <ul className="max-h-[min(280px,45vh)] space-y-2 overflow-y-auto overscroll-contain pr-0.5">
+                                                    {selectedEntries.map((entry, index) => {
+                                                        const showPath =
+                                                            entry.relativePath && entry.relativePath !== entry.file.name
+                                                        return (
+                                                            <li
+                                                                key={`${entry.relativePath}-${entry.file.name}-${entry.file.size}-${index}`}
+                                                                className="flex items-start gap-3 border border-mf-border bg-mf-card px-3 py-3"
+                                                            >
+                                                                <span
+                                                                    className="material-symbols-outlined mt-0.5 shrink-0 text-[20px] text-mf-accent/90"
+                                                                    aria-hidden
+                                                                >
+                                                                    description
+                                                                </span>
+                                                                <div className="min-w-0 flex-1">
+                                                                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                                                                        <p
+                                                                            className="min-w-0 max-w-full break-words text-sm font-semibold leading-snug text-mf-ink sm:break-normal"
+                                                                            title={entry.file.name}
+                                                                        >
+                                                                            {entry.file.name}
+                                                                        </p>
+                                                                        <span className="shrink-0 font-mono text-[10px] text-mf-ink-muted">
+                                                                            {formatFileSize(entry.file.size)}
+                                                                        </span>
+                                                                    </div>
+                                                                    {showPath ? (
+                                                                        <p
+                                                                            className="mt-1 break-all font-mono text-[10px] leading-relaxed text-mf-ink-muted sm:break-words"
+                                                                            title={entry.relativePath}
+                                                                        >
+                                                                            {entry.relativePath}
+                                                                        </p>
+                                                                    ) : null}
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => removeSelectedEntryAt(index)}
+                                                                    className="shrink-0 rounded border border-transparent p-1 font-mono text-mf-ink-muted transition-colors hover:border-mf-border hover:text-mf-danger"
+                                                                    aria-label={`Remove ${entry.file.name} from selection`}
+                                                                >
+                                                                    <svg
+                                                                        width="14"
+                                                                        height="14"
+                                                                        viewBox="0 0 24 24"
+                                                                        fill="none"
+                                                                        stroke="currentColor"
+                                                                        strokeWidth="2.2"
+                                                                        strokeLinecap="round"
+                                                                        aria-hidden
+                                                                    >
+                                                                        <line x1="18" y1="6" x2="6" y2="18" />
+                                                                        <line x1="6" y1="6" x2="18" y2="18" />
+                                                                    </svg>
+                                                                </button>
+                                                            </li>
+                                                        )
+                                                    })}
+                                                </ul>
+                                            </div>
+                                        ) : null}
+
+                                        <div className="grid grid-cols-1 gap-px border-b border-mf-border bg-mf-border md:grid-cols-2">
+                                            <div className="flex items-center justify-between gap-3 bg-mf-card px-4 py-4">
+                                                <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-mf-ink-muted">Password protect</span>
+                                                <MfToggle
+                                                    on={passwordProtectOn}
+                                                    onToggle={handlePasswordProtectToggle}
+                                                    ariaLabel="Password protect"
+                                                />
+                                            </div>
+                                            <div className="flex flex-col gap-3 bg-mf-card px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                                                <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.1em] text-mf-ink-muted">Expires after</span>
                                                 <ExpirySelector selected={selectedExpiry} onChange={setSelectedExpiry} />
                                             </div>
-                                            <div className="flex items-center px-4 py-4">
+                                            <div className="flex flex-wrap items-center justify-between gap-3 bg-mf-card px-4 py-4 md:col-span-2">
+                                                <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-mf-ink-muted">Max downloads</span>
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => adjustDownloadLimit(-1)}
+                                                        className="flex h-[22px] w-[22px] items-center justify-center border border-mf-border bg-mf-card font-mono text-sm text-mf-ink-muted transition-colors hover:border-mf-ink hover:text-mf-ink"
+                                                        aria-label="Decrease download limit"
+                                                    >
+                                                        −
+                                                    </button>
+                                                    <span className="min-w-[1.25rem] text-center font-mono text-[13px] font-medium text-mf-ink">
+                                                        {downloadStepperValue === 0 ? '—' : String(downloadStepperValue)}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => adjustDownloadLimit(1)}
+                                                        className="flex h-[22px] w-[22px] items-center justify-center border border-mf-border bg-mf-card font-mono text-sm text-mf-ink-muted transition-colors hover:border-mf-ink hover:text-mf-ink"
+                                                        aria-label="Increase download limit"
+                                                    >
+                                                        +
+                                                    </button>
+                                                    <label className="sr-only" htmlFor="download-limit-input">
+                                                        Download limit
+                                                    </label>
+                                                    <input
+                                                        id="download-limit-input"
+                                                        data-testid="download-limit-input"
+                                                        type="text"
+                                                        inputMode="numeric"
+                                                        placeholder="Unlimited"
+                                                        value={maxDownloadsInput}
+                                                        onChange={(event) => setMaxDownloadsInput(event.target.value)}
+                                                        className="sr-only"
+                                                        tabIndex={-1}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="bg-mf-card px-4 py-4 md:col-span-2">
                                                 <button
                                                     type="button"
-                                                    onClick={() => setShowAdvancedProtection((v) => !v)}
-                                                    className="flex w-full items-center justify-between gap-2 text-left"
-                                                    aria-expanded={showAdvancedProtection}
+                                                    onClick={() => setShowPreview(true)}
+                                                    disabled={isCollection}
+                                                    className="flex h-10 w-full items-center justify-center gap-2 border border-mf-border font-mono text-xs uppercase tracking-wider text-mf-ink-muted transition-colors hover:border-mf-ink hover:text-mf-ink disabled:opacity-50"
                                                 >
-                                                    <SurfaceLabel
-                                                        icon="tune"
-                                                        title="Advanced protection"
-                                                        description="Optional limits, password, preview."
-                                                        trailing={
-                                                            <span className="border border-mf-border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-mf-ink-muted">
-                                                                Optional
-                                                            </span>
-                                                        }
-                                                    />
-                                                    <span className={`material-symbols-outlined text-mf-ink-muted transition-transform ${showAdvancedProtection ? 'rotate-180' : ''}`}>
-                                                        expand_more
-                                                    </span>
+                                                    <span className="material-symbols-outlined text-lg">visibility</span>
+                                                    {isCollection ? 'Preview unavailable for collections' : 'Preview before sending'}
                                                 </button>
                                             </div>
                                         </div>
 
-                                        <AnimatePresence initial={false}>
-                                            {showAdvancedProtection && (
-                                                <motion.div
-                                                    key="advanced-protection"
-                                                    initial={prefersReducedMotion ? false : { height: 0, opacity: 0 }}
-                                                    animate={{ height: 'auto', opacity: 1 }}
-                                                    exit={prefersReducedMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
-                                                    transition={shellTransition}
-                                                    className="overflow-hidden border-b border-mf-border bg-mf-bg-panel"
-                                                >
-                                                    <div className="space-y-4 px-4 py-4 sm:px-5">
-                                                        <div className="border border-mf-border bg-mf-card px-4 py-3">
-                                                            <label className="mb-2 block font-mono text-[10px] uppercase tracking-wide text-mf-ink-muted">Download limit</label>
-                                                            <input
-                                                                type="number"
-                                                                min="1"
-                                                                step="1"
-                                                                inputMode="numeric"
-                                                                value={maxDownloadsInput}
-                                                                onChange={(event) => setMaxDownloadsInput(event.target.value)}
-                                                                placeholder="Unlimited"
-                                                                className="w-full bg-transparent font-mono text-sm text-mf-ink outline-none placeholder:text-mf-ink-muted/60"
-                                                            />
-                                                            <p className="mt-2 font-mono text-[10px] text-mf-ink-muted">
-                                                                Each authorized download consumes one remaining view.
-                                                            </p>
-                                                        </div>
-
-                                                        <div className="space-y-3 border border-mf-border bg-mf-card px-4 py-3">
-                                                            <div>
-                                                                <label className="mb-2 block font-mono text-[10px] uppercase tracking-wide text-mf-ink-muted">Password</label>
-                                                                <input
-                                                                    type="password"
-                                                                    autoComplete="new-password"
-                                                                    value={passwordInput}
-                                                                    onChange={(event) => setPasswordInput(event.target.value)}
-                                                                    placeholder="Leave blank for no password"
-                                                                    className="w-full bg-transparent font-mono text-sm text-mf-ink outline-none placeholder:text-mf-ink-muted/60"
-                                                                />
-                                                            </div>
-                                                            <div>
-                                                                <label className="mb-2 block font-mono text-[10px] uppercase tracking-wide text-mf-ink-muted">Confirm password</label>
-                                                                <input
-                                                                    type="password"
-                                                                    autoComplete="new-password"
-                                                                    value={confirmPasswordInput}
-                                                                    onChange={(event) => setConfirmPasswordInput(event.target.value)}
-                                                                    placeholder="Repeat password"
-                                                                    className="w-full bg-transparent font-mono text-sm text-mf-ink outline-none placeholder:text-mf-ink-muted/60"
-                                                                />
-                                                            </div>
-                                                            <p className="font-mono text-[10px] text-mf-ink-muted">
-                                                                Adds a server-side gate before anyone can fetch the encrypted file.
-                                                            </p>
-                                                        </div>
-
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setShowPreview(true)}
-                                                            disabled={isCollection}
-                                                            className="flex h-10 w-full items-center justify-center gap-2 border border-mf-border font-mono text-sm text-mf-ink-muted transition-colors hover:border-mf-ink hover:text-mf-ink disabled:opacity-50"
-                                                        >
-                                                            <span className="material-symbols-outlined text-lg">visibility</span>
-                                                            {isCollection ? 'Preview unavailable for collections' : 'Preview before sending'}
-                                                        </button>
-                                                    </div>
-                                                </motion.div>
-                                            )}
-                                        </AnimatePresence>
+                                        {passwordProtectOn ? (
+                                            <div className="space-y-3 border-b border-mf-border bg-mf-bg-panel px-4 py-4 sm:px-5">
+                                                <input
+                                                    type="password"
+                                                    autoComplete="new-password"
+                                                    value={passwordInput}
+                                                    onChange={(event) => setPasswordInput(event.target.value)}
+                                                    placeholder="Leave blank for no password"
+                                                    className="w-full border border-mf-border bg-mf-card px-3 py-2.5 font-mono text-sm text-mf-ink outline-none placeholder:text-mf-ink-muted focus:border-mf-accent"
+                                                />
+                                                <input
+                                                    type="password"
+                                                    autoComplete="new-password"
+                                                    value={confirmPasswordInput}
+                                                    onChange={(event) => setConfirmPasswordInput(event.target.value)}
+                                                    placeholder="Repeat password"
+                                                    className="w-full border border-mf-border bg-mf-card px-3 py-2.5 font-mono text-sm text-mf-ink outline-none placeholder:text-mf-ink-muted focus:border-mf-accent"
+                                                />
+                                                <p className="font-mono text-[10px] text-mf-ink-muted">
+                                                    Server-side gate before anyone can fetch ciphertext. Leave both empty if you disable password protect above.
+                                                </p>
+                                            </div>
+                                        ) : null}
 
                                         <div className="p-4 sm:p-5">
                                             <button

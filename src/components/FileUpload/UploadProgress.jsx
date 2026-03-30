@@ -49,13 +49,25 @@ export default function UploadProgress({ progress, fileName, fileMeta, status, s
                             }`}
                         >
                             <div className="flex items-center gap-2">
-                                <span
-                                    className={`material-symbols-outlined text-[18px] ${
-                                        completed ? 'text-mf-accent icon-filled' : active ? 'text-mf-accent' : 'text-mf-ink-muted'
-                                    }`}
-                                >
-                                    {completed ? 'check_circle' : active ? 'progress_activity' : 'radio_button_unchecked'}
-                                </span>
+                                {completed ? (
+                                    <span
+                                        className="material-symbols-outlined text-[18px] text-mf-accent icon-filled"
+                                        aria-hidden
+                                    >
+                                        check_circle
+                                    </span>
+                                ) : active ? (
+                                    <span
+                                        className="material-symbols-outlined animate-spin text-[18px] text-mf-accent motion-reduce:animate-none"
+                                        aria-hidden
+                                    >
+                                        progress_activity
+                                    </span>
+                                ) : (
+                                    <span className="material-symbols-outlined text-[18px] text-mf-ink-muted" aria-hidden>
+                                        radio_button_unchecked
+                                    </span>
+                                )}
                                 <span className={`text-sm ${completed || active ? 'text-mf-ink' : 'text-mf-ink-muted'}`}>{item.label}</span>
                             </div>
                         </div>

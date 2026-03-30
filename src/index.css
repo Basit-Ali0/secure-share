@@ -31,6 +31,27 @@
   ::-webkit-scrollbar-thumb:hover {
     background: rgb(var(--mf-ink-muted));
   }
+
+  /* Theme toggle: View Transitions API — circular reveal from click (see ThemeContext) */
+  @media (prefers-reduced-motion: no-preference) {
+    ::view-transition-old(root) {
+      animation: none;
+    }
+
+    ::view-transition-new(root) {
+      animation: theme-root-reveal 0.55s cubic-bezier(0.4, 0, 0.2, 1) both;
+    }
+  }
+}
+
+@keyframes theme-root-reveal {
+  from {
+    clip-path: circle(0px at var(--theme-vt-x) var(--theme-vt-y));
+  }
+
+  to {
+    clip-path: circle(var(--theme-vt-r) at var(--theme-vt-x) var(--theme-vt-y));
+  }
 }
 
 @layer components {

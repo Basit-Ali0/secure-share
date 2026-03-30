@@ -28,7 +28,7 @@ export default function MfNav({ badge = null, homeHref = '/' }) {
                 ) : null}
                 <button
                     type="button"
-                    onClick={toggleTheme}
+                    onClick={(event) => toggleTheme(event)}
                     className="flex h-9 w-9 items-center justify-center rounded border border-mf-border text-mf-ink-muted transition-colors hover:border-mf-ink hover:text-mf-ink"
                     aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
                 >

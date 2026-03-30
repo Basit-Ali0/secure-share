@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useLayoutEffect, useState } from 'react'
+import { flushSync } from 'react-dom'
 
 const ThemeContext = createContext()
 
@@ -22,20 +23,51 @@ function readStoredTheme() {
 export function ThemeProvider({ children }) {
     const [theme, setTheme] = useState(() => readStoredTheme())
 
-    useEffect(() => {
-        // Apply theme to document
+    useLayoutEffect(() => {
         if (theme === 'dark') {
             document.documentElement.classList.add('dark')
         } else {
             document.documentElement.classList.remove('dark')
         }
-
-        // Save to localStorage
-        localStorage.setItem('theme', theme)
+        try {
+            localStorage.setItem('theme', theme)
+        } catch {
+            /* ignore */
+        }
     }, [theme])
 
-    const toggleTheme = () => {
-        setTheme(prev => prev === 'light' ? 'dark' : 'light')
+    const toggleTheme = (clickEvent) => {
+        const runToggle = () => {
+            flushSync(() => {
+                setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))
+            })
+        }
+
+        if (typeof document === 'undefined') {
+            return
+        }
+
+        const reduceMotion =
+            typeof window !== 'undefined'
+            && typeof window.matchMedia === 'function'
+            && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+        const vt = document.startViewTransition
+        if (!vt || reduceMotion) {
+            runToggle()
+            return
+        }
+
+        const x = clickEvent?.clientX ?? window.innerWidth / 2
+        const y = clickEvent?.clientY ?? window.innerHeight / 2
+        const r =
+            Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y)) + 32
+
+        document.documentElement.style.setProperty('--theme-vt-x', `${x}px`)
+        document.documentElement.style.setProperty('--theme-vt-y', `${y}px`)
+        document.documentElement.style.setProperty('--theme-vt-r', `${r}px`)
+
+        vt.call(document, runToggle)
     }
 
     return (

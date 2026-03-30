@@ -8,10 +8,24 @@ export default {
     theme: {
         extend: {
             fontFamily: {
-                sans: ['Roboto', 'sans-serif'],
+                sans: ['Syne', 'sans-serif'],
+                display: ['Syne', 'sans-serif'],
+                mono: ['IBM Plex Mono', 'monospace'],
             },
             colors: {
-                // Jet Black & Deep Purple Palette
+                mf: {
+                    bg: 'rgb(var(--mf-bg) / <alpha-value>)',
+                    'bg-panel': 'rgb(var(--mf-bg-panel) / <alpha-value>)',
+                    card: 'rgb(var(--mf-card) / <alpha-value>)',
+                    ink: 'rgb(var(--mf-ink) / <alpha-value>)',
+                    'ink-muted': 'rgb(var(--mf-ink-muted) / <alpha-value>)',
+                    border: 'rgb(var(--mf-border) / <alpha-value>)',
+                    accent: 'rgb(var(--mf-accent) / <alpha-value>)',
+                    success: 'rgb(var(--mf-success) / <alpha-value>)',
+                    warn: 'rgb(var(--mf-warn) / <alpha-value>)',
+                    danger: 'rgb(var(--mf-danger) / <alpha-value>)',
+                },
+                // Legacy M3 palette (kept for gradual migration)
                 surface: {
                     DEFAULT: '#000000',
                     container: '#080808',

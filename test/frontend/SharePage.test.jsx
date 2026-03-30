@@ -3,6 +3,7 @@ import { HelmetProvider } from 'react-helmet-async'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { vi } from 'vitest'
 import SharePage from '../../src/pages/SharePage.jsx'
+import { ThemeProvider } from '../../src/context/ThemeContext.jsx'
 import {
     deriveCollectionItemMaterial,
     downloadAndDecryptManifest,
@@ -20,12 +21,14 @@ function renderSharePage(route = '/s/Short123#key=test-key&iv=test-iv') {
     window.location.hash = '#key=test-key&iv=test-iv'
     return render(
         <HelmetProvider>
-            <MemoryRouter initialEntries={[route]}>
-                <Routes>
-                    <Route path="/share/:fileId" element={<SharePage />} />
-                    <Route path="/s/:shortId" element={<SharePage />} />
-                </Routes>
-            </MemoryRouter>
+            <ThemeProvider>
+                <MemoryRouter initialEntries={[route]}>
+                    <Routes>
+                        <Route path="/share/:fileId" element={<SharePage />} />
+                        <Route path="/s/:shortId" element={<SharePage />} />
+                    </Routes>
+                </MemoryRouter>
+            </ThemeProvider>
         </HelmetProvider>
     )
 }
@@ -34,7 +37,6 @@ describe('SharePage', () => {
     beforeEach(() => {
         vi.clearAllMocks()
         vi.restoreAllMocks()
-        vi.spyOn(window, 'alert').mockImplementation(() => {})
     })
 
     it('reveals collection contents for multi-file shares', async () => {
@@ -210,7 +212,7 @@ describe('SharePage', () => {
         fireEvent.click(await screen.findByRole('button', { name: /decrypt & download/i }))
 
         await waitFor(() => {
-            expect(window.alert).toHaveBeenCalledWith('Download failed: Download limit reached')
+            expect(screen.getByRole('alert')).toHaveTextContent('Download failed: Download limit reached')
         })
     })
 

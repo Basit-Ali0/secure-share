@@ -1,5 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import { Helmet } from 'react-helmet-async'
 import { formatFileSize } from '../utils/fileUtils'
 import {
@@ -14,6 +15,7 @@ import MfFooter from '../components/layout/MfFooter'
 import MfCornerCard from '../components/layout/MfCornerCard'
 import { OG_IMAGE_URL, SITE_NAME } from '../lib/siteConfig'
 import { trackEvent } from '../lib/analytics'
+import { fadeUpProps, transitionSec } from '../lib/motionPresets.js'
 
 function ShareHelmet({ title, description, url }) {
     return (
@@ -118,6 +120,7 @@ export default function SharePage() {
     const [collectionDownloadAll, setCollectionDownloadAll] = useState(false)
     const [activeCollectionItemId, setActiveCollectionItemId] = useState('')
     const [expiryBaselineMs, setExpiryBaselineMs] = useState(null)
+    const prefersReducedMotion = useReducedMotion()
 
     const downloadCount = metadata?.download_count || 0
     const maxDownloads = metadata?.max_downloads ?? null
@@ -487,10 +490,12 @@ export default function SharePage() {
                 />
                 <MfNav badge="Secure Download" />
                 <div className="flex items-center justify-center px-4 py-24">
-                    <MfCornerCard className="p-12 text-center">
-                        <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-2 border-mf-border border-t-mf-accent" />
-                        <p className="font-mono text-sm text-mf-ink-muted">Loading file…</p>
-                    </MfCornerCard>
+                    <motion.div {...fadeUpProps(prefersReducedMotion, 16, 0)}>
+                        <MfCornerCard className="p-12 text-center">
+                            <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-2 border-mf-border border-t-mf-accent" />
+                            <p className="font-mono text-sm text-mf-ink-muted">Loading file…</p>
+                        </MfCornerCard>
+                    </motion.div>
                 </div>
             </div>
         )
@@ -506,20 +511,22 @@ export default function SharePage() {
                 />
                 <MfNav badge="Secure Download" />
                 <div className="mx-auto flex max-w-md justify-center px-4 py-16">
-                    <MfCornerCard className="w-full p-10 text-center">
-                        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-mf-danger/15 text-mf-danger">
-                            <span className="material-symbols-outlined text-3xl">error</span>
-                        </div>
-                        <h2 className="mb-2 text-xl font-bold text-mf-ink">File not found</h2>
-                        <p className="mb-6 font-mono text-sm text-mf-ink-muted">{error}</p>
-                        <button
-                            type="button"
-                            onClick={() => navigate('/')}
-                            className="w-full bg-mf-ink py-3.5 text-sm font-bold uppercase tracking-wider text-mf-bg transition-colors hover:bg-mf-accent"
-                        >
-                            Upload a file
-                        </button>
-                    </MfCornerCard>
+                    <motion.div className="w-full" {...fadeUpProps(prefersReducedMotion, 18, 0)}>
+                        <MfCornerCard className="w-full p-10 text-center">
+                            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-mf-danger/15 text-mf-danger">
+                                <span className="material-symbols-outlined text-3xl">error</span>
+                            </div>
+                            <h2 className="mb-2 text-xl font-bold text-mf-ink">File not found</h2>
+                            <p className="mb-6 font-mono text-sm text-mf-ink-muted">{error}</p>
+                            <button
+                                type="button"
+                                onClick={() => navigate('/')}
+                                className="w-full bg-mf-ink py-3.5 text-sm font-bold uppercase tracking-wider text-mf-bg transition-colors hover:bg-mf-accent"
+                            >
+                                Upload a file
+                            </button>
+                        </MfCornerCard>
+                    </motion.div>
                 </div>
                 <MfFooter showSendLink />
             </div>
@@ -537,7 +544,7 @@ export default function SharePage() {
                     url={sharePageUrl}
                 />
                 <MfNav badge="Secure Download" />
-                <main className="mx-auto max-w-lg px-4 py-12 md:py-16">
+                <motion.main className="mx-auto max-w-lg px-4 py-12 md:py-16" {...fadeUpProps(prefersReducedMotion, 16, 0.06)}>
                     <MfCornerCard className="px-8 py-10 text-center md:px-12">
                         <div className="mb-4 text-mf-ink-muted">
                             <svg className="mx-auto h-9 w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden>
@@ -591,7 +598,7 @@ export default function SharePage() {
                             File details stay hidden until the correct password unlocks this share.
                         </p>
                     </MfCornerCard>
-                </main>
+                </motion.main>
                 <MfFooter showSendLink />
             </div>
         )
@@ -615,12 +622,12 @@ export default function SharePage() {
                 />
                 <MfNav badge="Secure Download" />
 
-                <main className="mx-auto max-w-[860px] px-6 pb-16 pt-10 md:px-12 md:pt-[4.5rem]">
-                    <div className="mf-fade-up mb-5 flex items-center gap-2.5 font-mono text-[10.5px] uppercase tracking-[0.14em] text-mf-ink-muted">
+                <motion.main className="mx-auto max-w-[860px] px-6 pb-16 pt-10 md:px-12 md:pt-[4.5rem]" {...fadeUpProps(prefersReducedMotion, 14, 0.04)}>
+                    <div className="mb-5 flex items-center gap-2.5 font-mono text-[10.5px] uppercase tracking-[0.14em] text-mf-ink-muted">
                         <span className="h-px w-[22px] bg-mf-accent" />
                         Incoming transfer
                     </div>
-                    <h1 className="mf-fade-up mb-10 text-[clamp(2rem,5vw,2.625rem)] font-extrabold leading-[1.05] tracking-tight md:mb-11">
+                    <h1 className="mb-10 text-[clamp(2rem,5vw,2.625rem)] font-extrabold leading-[1.05] tracking-tight md:mb-11">
                         Someone sent
                         <br />
                         you a <span className="text-mf-accent">collection.</span>
@@ -840,32 +847,41 @@ export default function SharePage() {
                                         </div>
 
                                         <div className="space-y-2">
-                                            {collectionManifest.files.map((item) => (
-                                                <CollectionListItem
+                                            {collectionManifest.files.map((item, index) => (
+                                                <motion.div
                                                     key={item.itemId}
-                                                    item={item}
-                                                    displayName={duplicateNameLabels[item.itemId] || item.name}
-                                                    downloading={activeCollectionItemId === item.itemId}
-                                                    disabled={collectionInteractionLocked}
-                                                    onDownload={async () => {
-                                                        if (collectionInteractionLocked) {
-                                                            return
-                                                        }
-                                                        try {
-                                                            setDownloading(true)
-                                                            await handleCollectionItemDownload(item)
-                                                            setDownloadComplete(true)
-                                                        } catch (err) {
-                                                            console.error('Item download error:', err)
-                                                            alert(`Download failed: ${err.message}`)
-                                                        } finally {
-                                                            setDownloading(false)
-                                                            setDownloadProgress(0)
-                                                            setActiveCollectionItemId('')
-                                                            terminateWorkerPool()
-                                                        }
+                                                    initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    transition={{
+                                                        ...transitionSec(0.34),
+                                                        delay: prefersReducedMotion ? 0 : index * 0.05,
                                                     }}
-                                                />
+                                                >
+                                                    <CollectionListItem
+                                                        item={item}
+                                                        displayName={duplicateNameLabels[item.itemId] || item.name}
+                                                        downloading={activeCollectionItemId === item.itemId}
+                                                        disabled={collectionInteractionLocked}
+                                                        onDownload={async () => {
+                                                            if (collectionInteractionLocked) {
+                                                                return
+                                                            }
+                                                            try {
+                                                                setDownloading(true)
+                                                                await handleCollectionItemDownload(item)
+                                                                setDownloadComplete(true)
+                                                            } catch (err) {
+                                                                console.error('Item download error:', err)
+                                                                alert(`Download failed: ${err.message}`)
+                                                            } finally {
+                                                                setDownloading(false)
+                                                                setDownloadProgress(0)
+                                                                setActiveCollectionItemId('')
+                                                                terminateWorkerPool()
+                                                            }
+                                                        }}
+                                                    />
+                                                </motion.div>
                                             ))}
                                         </div>
                                     </div>
@@ -908,7 +924,7 @@ export default function SharePage() {
                             </div>
                         ) : null}
                     </div>
-                </main>
+                </motion.main>
                 <MfFooter showSendLink />
             </div>
         )
@@ -934,12 +950,12 @@ export default function SharePage() {
             />
             <MfNav badge="Secure Download" />
 
-            <main className="mx-auto max-w-[860px] px-6 pb-16 pt-10 md:px-12 md:pt-[4.5rem]">
-                <div className="mf-fade-up mb-5 flex items-center gap-2.5 font-mono text-[10.5px] uppercase tracking-[0.14em] text-mf-ink-muted">
+            <motion.main className="mx-auto max-w-[860px] px-6 pb-16 pt-10 md:px-12 md:pt-[4.5rem]" {...fadeUpProps(prefersReducedMotion, 14, 0.04)}>
+                <div className="mb-5 flex items-center gap-2.5 font-mono text-[10.5px] uppercase tracking-[0.14em] text-mf-ink-muted">
                     <span className="h-px w-[22px] bg-mf-accent" />
                     Incoming transfer
                 </div>
-                <h1 className="mf-fade-up mb-10 text-[clamp(2rem,5vw,2.625rem)] font-extrabold leading-[1.05] tracking-tight md:mb-11">
+                <h1 className="mb-10 text-[clamp(2rem,5vw,2.625rem)] font-extrabold leading-[1.05] tracking-tight md:mb-11">
                     Someone sent
                     <br />
                     you a <span className="text-mf-accent">file.</span>
@@ -1181,7 +1197,7 @@ export default function SharePage() {
                         </div>
                     ) : null}
                 </div>
-            </main>
+            </motion.main>
 
             <MfFooter showSendLink />
         </div>

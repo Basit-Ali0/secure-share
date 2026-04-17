@@ -1,20 +1,11 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { Helmet } from 'react-helmet-async'
 import DragDropZone from '../components/FileUpload/DragDropZone'
-import UploadProgress from '../components/FileUpload/UploadProgress'
 import ExpirySelector, { EXPIRY_OPTIONS } from '../components/FileUpload/ExpirySelector'
-import FilePreviewModal from '../components/FileUpload/FilePreviewModal'
-import QRCode from '../components/SharePage/QRCode'
 import MfNav from '../components/layout/MfNav'
 import MfFooter from '../components/layout/MfFooter'
 import MfCornerCard from '../components/layout/MfCornerCard'
-import {
-    encryptAndUploadCollection,
-    encryptAndUploadStreaming,
-    rollbackUploadedObjects,
-    terminateWorkerPool
-} from '../utils/streamingEncryption'
 import { formatFileSize } from '../utils/fileUtils'
 import { buildCanonicalUrl, DEFAULT_DESCRIPTION, DEFAULT_TITLE, OG_IMAGE_URL, SITE_NAME } from '../lib/siteConfig'
 import { trackEvent } from '../lib/analytics'
@@ -27,6 +18,20 @@ import {
     tapProps,
     transitionSec,
 } from '../lib/motionPresets.js'
+
+const UploadProgress = lazy(() => import('../components/FileUpload/UploadProgress'))
+const FilePreviewModal = lazy(() => import('../components/FileUpload/FilePreviewModal'))
+const QRCode = lazy(() => import('../components/SharePage/QRCode'))
+
+let uploadHelpersPromise
+
+function loadUploadHelpers() {
+    if (!uploadHelpersPromise) {
+        uploadHelpersPromise = import('../utils/streamingEncryption')
+    }
+
+    return uploadHelpersPromise
+}
 
 function MfToggle({ on, onToggle, disabled = false, ariaLabel }) {
     return (
@@ -194,6 +199,7 @@ export default function HomePage() {
         setPasswordProtectOn(false)
         setPasswordInput('')
         setConfirmPasswordInput('')
+        void loadUploadHelpers()
     }
 
     const clearSelectedFile = () => {
@@ -267,6 +273,8 @@ export default function HomePage() {
     const handleUpload = async () => {
         if (selectedEntries.length === 0) return
 
+        let uploadHelpers = null
+
         try {
             const trimmedMaxDownloads = maxDownloadsInput.trim()
             const hasDownloadLimit = trimmedMaxDownloads.length > 0
@@ -299,6 +307,8 @@ export default function HomePage() {
                 label: isCollection ? 'multi' : (selectedFile.type || 'unknown'),
             })
 
+            uploadHelpers = await loadUploadHelpers()
+
             const fileId = crypto.randomUUID()
             let sharePath
             let shareKind = 'single'
@@ -310,7 +320,7 @@ export default function HomePage() {
                 setUploadStage('encrypting')
                 setUploadStatus('Encrypting collection locally...')
 
-                const uploadResult = await encryptAndUploadCollection(
+                const uploadResult = await uploadHelpers.encryptAndUploadCollection(
                     selectedEntries,
                     fileId,
                     ({ progress, statusText, completedFilesCount, activeFilesCount, totalFiles, currentFileName, stage }) => {
@@ -356,7 +366,7 @@ export default function HomePage() {
                 setUploadStage('encrypting')
                 setUploadStatus('Encrypting locally...')
 
-                const uploadResult = await encryptAndUploadStreaming(
+                const uploadResult = await uploadHelpers.encryptAndUploadStreaming(
                     selectedFile,
                     fileId,
                     (progress, statusText) => {
@@ -406,7 +416,7 @@ export default function HomePage() {
 
             if (!metadataResponse.ok) {
                 const errData = await metadataResponse.json().catch(() => ({}))
-                await rollbackUploadedObjects(uploadedObjects)
+                await uploadHelpers.rollbackUploadedObjects(uploadedObjects)
                 throw new Error(errData.message || 'Failed to save file metadata')
             }
 
@@ -437,7 +447,7 @@ export default function HomePage() {
             alert(`Upload failed: ${error.message}`)
         } finally {
             setUploading(false)
-            terminateWorkerPool()
+            uploadHelpers?.terminateWorkerPool()
         }
     }
 
@@ -761,14 +771,22 @@ export default function HomePage() {
                     {uploading && (
                         <motion.div {...fadeUpProps(prefersReducedMotion, 12, 0)}>
                             <MfCornerCard>
-                            <UploadProgress
-                                progress={uploadProgress}
-                                fileName={uploadDisplayName || selectionTitle}
-                                fileMeta={uploadDisplayMeta}
-                                status={uploadStatus}
-                                stage={uploadStage}
-                                contextLabel={uploadContextLabel}
-                            />
+                                <Suspense
+                                    fallback={(
+                                        <div className="flex min-h-[180px] items-center justify-center px-4 py-6 text-center text-sm text-mf-ink-muted">
+                                            Preparing upload interface...
+                                        </div>
+                                    )}
+                                >
+                                    <UploadProgress
+                                        progress={uploadProgress}
+                                        fileName={uploadDisplayName || selectionTitle}
+                                        fileMeta={uploadDisplayMeta}
+                                        status={uploadStatus}
+                                        stage={uploadStage}
+                                        contextLabel={uploadContextLabel}
+                                    />
+                                </Suspense>
                             </MfCornerCard>
                         </motion.div>
                     )}
@@ -858,7 +876,15 @@ export default function HomePage() {
                                         transition={shellTransition}
                                         className="border border-mf-border bg-mf-bg-panel p-5"
                                     >
-                                        <QRCode url={shareUrl} />
+                                        <Suspense
+                                            fallback={(
+                                                <div className="flex min-h-[220px] items-center justify-center text-sm text-mf-ink-muted">
+                                                    Generating QR code...
+                                                </div>
+                                            )}
+                                        >
+                                            <QRCode url={shareUrl} />
+                                        </Suspense>
                                     </motion.div>
                                 )}
                             </AnimatePresence>
@@ -877,11 +903,13 @@ export default function HomePage() {
 
             <AnimatePresence>
                 {showPreview && selectedFile && !isCollection ? (
-                    <FilePreviewModal
-                        key={`${selectedFile.name}-${selectedFile.size}-${selectedFile.lastModified}`}
-                        file={selectedFile}
-                        onClose={() => setShowPreview(false)}
-                    />
+                    <Suspense fallback={null}>
+                        <FilePreviewModal
+                            key={`${selectedFile.name}-${selectedFile.size}-${selectedFile.lastModified}`}
+                            file={selectedFile}
+                            onClose={() => setShowPreview(false)}
+                        />
+                    </Suspense>
                 ) : null}
             </AnimatePresence>
         </div>

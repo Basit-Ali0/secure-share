@@ -7,7 +7,9 @@ import './index.css'
 import { ThemeProvider } from './context/ThemeContext.jsx'
 import { initAnalytics } from './lib/analytics.js'
 
-initAnalytics()
+if (typeof window !== 'undefined') {
+    initAnalytics()
+}
 
 ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>

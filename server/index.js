@@ -8,14 +8,27 @@ const { app, env } = createRuntimeContext()
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const distPath = path.join(__dirname, '..', 'dist')
+const assetsPath = `${path.sep}assets${path.sep}`
 
-app.use(express.static(distPath))
+app.use(express.static(distPath, {
+    setHeaders: (res, filePath) => {
+        if (filePath.includes(assetsPath)) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+            return
+        }
+
+        if (path.basename(filePath) === 'index.html') {
+            res.setHeader('Cache-Control', 'no-cache')
+        }
+    }
+}))
 
 app.all('/api/*', (req, res) => {
     res.status(404).json({ message: `API route not found: ${req.method} ${req.path}` })
 })
 
 app.get('*', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache')
     res.sendFile(path.join(distPath, 'index.html'))
 })
 

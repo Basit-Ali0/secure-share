@@ -1,10 +1,15 @@
+import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useOutlet } from 'react-router-dom'
-import { useEffect } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import HomePage from './pages/HomePage'
-import SharePage from './pages/SharePage'
 import { trackPageView } from './lib/analytics.js'
 import { routePresenceProps } from './lib/motionPresets.js'
+
+const SharePage = lazy(() => import('./pages/SharePage'))
+
+function RouteFallback() {
+    return <div className="min-h-screen bg-mf-bg" aria-hidden />
+}
 
 function AnalyticsTracker() {
     const location = useLocation()
@@ -38,8 +43,22 @@ function App() {
             <Routes>
                 <Route element={<AnimatedOutlet />}>
                     <Route path="/" element={<HomePage />} />
-                    <Route path="/share/:fileId" element={<SharePage />} />
-                    <Route path="/s/:shortId" element={<SharePage />} />
+                    <Route
+                        path="/share/:fileId"
+                        element={(
+                            <Suspense fallback={<RouteFallback />}>
+                                <SharePage />
+                            </Suspense>
+                        )}
+                    />
+                    <Route
+                        path="/s/:shortId"
+                        element={(
+                            <Suspense fallback={<RouteFallback />}>
+                                <SharePage />
+                            </Suspense>
+                        )}
+                    />
                     <Route path="*" element={<Navigate to="/" replace />} />
                 </Route>
             </Routes>

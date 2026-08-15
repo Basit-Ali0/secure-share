@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024 // 5GB
@@ -16,6 +16,18 @@ export default function DragDropZone({ onFileSelect }) {
     const fileInputRef = useRef(null)
     const folderInputRef = useRef(null)
     const dragCounter = useRef(0)
+
+    useEffect(() => {
+        const folderInput = folderInputRef.current
+        if (!folderInput) return
+
+        // Apply directory-picker flags on the DOM node directly because these
+        // non-standard attributes can be inconsistent when passed through JSX.
+        folderInput.setAttribute('webkitdirectory', '')
+        folderInput.setAttribute('directory', '')
+        folderInput.setAttribute('mozdirectory', '')
+        folderInput.webkitdirectory = true
+    }, [])
 
     const handleDragEnter = (e) => {
         e.preventDefault()
@@ -106,8 +118,6 @@ export default function DragDropZone({ onFileSelect }) {
                 ref={folderInputRef}
                 type="file"
                 multiple
-                webkitdirectory=""
-                directory=""
                 onChange={handleFileInput}
                 className="hidden"
             />

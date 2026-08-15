@@ -9,9 +9,13 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NODE_VERSION
+        value: 22
       - key: VITE_SUPABASE_URL
         sync: false
       - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: VITE_SITE_URL
         sync: false
       - key: SUPABASE_SERVICE_KEY
         sync: false
@@ -23,7 +27,11 @@ services:
         sync: false
       - key: R2_BUCKET_NAME
         sync: false
+      - key: DOWNLOAD_SESSION_SECRET
+        sync: false
       - key: CLEANUP_SECRET
         sync: false
       - key: CORS_ORIGIN
+        sync: false
+      - key: GA_MEASUREMENT_ID
         sync: false
